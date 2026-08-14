@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目测试日报模版</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    color: #1f1f1f;
+    background: #f5f6f8;
+    margin: 0;
+    padding: 32px 20px;
+    line-height: 1.6;
+  }
+  .report {
+    max-width: 892px;
+    margin: 0 auto;
+    background: #ffffff;
+    padding: 24px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 14px;
+  }
+  col.c1 { width: 100px; }
+  col.c2 { width: 109px; }
+  col.c3, col.c4, col.c5 { width: 149px; }
+  td {
+    border: 1px solid #000000;
+    vertical-align: top;
+    padding: 8px 7px;
+    word-break: break-word;
+  }
+  .banner {
+    background: rgba(0, 96, 255, 0.98);
+    color: #ffffff;
+    font-weight: 700;
+  }
+  .label {
+    background: #ffffff;
+    white-space: nowrap;
+  }
+  .risk-badge {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 600;
+  }
+  .risk-badge::before {
+    content: "";
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    flex-shrink: 0;
+  }
+  .risk-high::before { background: #ff4d4f; }
+  .risk-medium::before { background: #faad14; }
+  .risk-low::before { background: #52c41a; }
+  .risk-none::before { background: #bfbfbf; }
+  .risk-high { color: #ff4d4f; }
+  .risk-medium { color: #faad14; }
+  .risk-low { color: #52c41a; }
+  .risk-none { color: #595959; }
+  .metric-danger { color: #ff4d4f; font-weight: 600; }
+  .metric-warning { color: #faad14; font-weight: 600; }
+  .metric-success { color: #52c41a; font-weight: 600; }
+  .summary-list {
+    margin: 0;
+    padding-left: 18px;
+  }
+  .summary-list li {
+    margin: 4px 0;
+  }
+  .progress-list {
+    margin: 0;
+    padding-left: 18px;
+  }
+  .progress-list li {
+    margin: 4px 0;
+  }
+  .label-center {
+    background: #ffffff;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .cell-center {
+    text-align: center;
+    vertical-align: middle;
+  }
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+  ul li {
+    margin: 2px 0;
+  }
+  .charts {
+    margin-top: 24px;
+  }
+  .chart-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .chart-box {
+    flex: 1 1 260px;
+    min-width: 260px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .chart-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1f1f1f;
+  }
+  .chart-canvas {
+    max-height: 240px;
+  }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="report">
+    <table>
+      <colgroup>
+        <col class="c1">
+        <col class="c2">
+        <col class="c3">
+        <col class="c4">
+        <col class="c5">
+      </colgroup>
+      <tbody>
+        <!-- 整体概述 -->
+        <tr>
+          <td class="banner" colspan="5">■ {项目名称}整体概述</td>
+        </tr>
+        <tr>
+          <td class="label-center" rowspan="3">项目进度</td>
+          <td class="label cell-center">风险等级</td>
+          <td colspan="3">{风险等级标识}</td>
+        </tr>
+        <tr>
+          <td class="label cell-center">{风险说明标签}</td>
+          <td colspan="3">{风险说明内容}</td>
+        </tr>
+        <tr>
+          <td class="label cell-center">测试进度</td>
+          <td colspan="3">{测试进度}</td>
+        </tr>
+
+        <!-- 缺陷情况 -->
+        <tr>
+          <td class="banner" colspan="5">■ 缺陷情况</td>
+        </tr>
+        <tr>
+          <td class="label-center">汇总</td>
+          <td colspan="4">
+            {缺陷情况汇总}
+          </td>
+        </tr>
+        <tr>
+          <td class="label-center">new</td>
+          <td colspan="4">
+            <ul>
+              {new缺陷列表}
+            </ul>
+          </td>
+        </tr>
+        <tr>
+          <td class="label-center">later</td>
+          <td colspan="4">
+            <ul>
+              {later缺陷列表}
+            </ul>
+          </td>
+        </tr>
+
+        <!-- 问题记录 -->
+        <tr>
+          <td class="banner" colspan="5">■ 问题记录</td>
+        </tr>
+        <tr>
+          <td colspan="5">{问题记录}</td>
+        </tr>
+      </tbody>
+    </table>
+</body>
+</html>

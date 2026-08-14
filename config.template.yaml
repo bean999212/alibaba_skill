@@ -1,0 +1,79 @@
+# 阿拉丁 + ione 每日测试风险日报 — 配置模板
+# 复制本文件为 config.yaml，填入真实值后使用。
+#
+# 数据访问不需要任何 Token / API Key。本 Skill 通过以下已授权通道取数：
+#   - 阿拉丁 / AAT 用例执行进度：用 builtin_browser 打开你「已登录」的 AAT 计划详情页
+#     （https://aat.alibaba-inc.com/page/jointDetail?...id=<planId>），从渲染后的页面正则抓取执行成功率。
+#     ⚠️ jointDetail 仅用于读取「某个已确认计划」的进度；搜索 / 模糊匹配测试计划必须走
+#        列表页 https://aat.alibaba-inc.com/page/jointList?tabKey=tp&tid=26（用详情页搜索永远只有 1 条）。
+#   - Aone 缺陷 / 项目：走 coop MCP 连接器（search_workitem_by_project 等），由连接器鉴权。
+#   - 钉钉群消息 / 文档 / 发送：走 DWS 连接器（扫码授权）与小Q通道。
+# 因此本文件不再包含 base_url / auth_token / REST 接口路径等配置。
+
+# 平台数据源（仅作说明，运行时无需填写凭证）
+sources:
+  # 阿拉丁 / AAT：浏览器已登录 tab 抓取
+  aat_via_browser: true
+  # Aone：coop MCP 连接器
+  aone_via_coop: true
+  # 钉钉：DWS 连接器
+  dingtalk_via_dws: true
+
+# Aone 项目搜索配置
+aone:
+  # 是否启用 Aone 项目模糊搜索
+  project_search_enabled: true
+  # 未匹配到项目时是否允许手动输入项目 ID
+  project_id_fallback: true
+
+# 需求模糊匹配配置
+matching:
+  # 匹配策略：contains / similarity / both
+  strategy: contains
+  # similarity 模式下的最小相似度阈值（0~1）
+  min_similarity: 0.6
+  # 每个平台返回的最大候选数
+  max_candidates: 5
+  # 同义词扩展表：当 Aone 项目或阿拉丁测试计划首次未匹配到时，按此处配置扩展关键词再次搜索
+  synonyms:
+    "会员积分兑换": ["积分兑换", "积分商城", "会员积分"]
+    "币种国际化": ["价美", "价格美化", "多币种"]
+    "集运三期": ["集运改版三期", "集运3期", "集运第三阶段"]
+
+# 风险阈值规则（可选，覆盖默认规则）
+risk_rules:
+  windows:
+    - days_max: 1
+      execution_rate: 0.95
+      pass_rate: 0.95
+      unclosed_p0_p1: 0
+      base_level: high
+    - days_max: 3
+      execution_rate: 0.80
+      pass_rate: 0.90
+      unclosed_p0_p1: 2
+      base_level: medium
+    - days_max: 7
+      execution_rate: 0.60
+      pass_rate: 0.85
+      unclosed_p0_p1: 5
+      base_level: low
+    - days_max: 9999
+      execution_rate: 0.30
+      pass_rate: 0.80
+      unclosed_p0_p1: 10
+      base_level: no_risk
+
+# 报告配置
+report:
+  title: "测试日报"
+  timezone: "Asia/Shanghai"
+  fallback_to_file: true
+  output_dir: "./outputs"
+
+# 调度默认配置
+schedule:
+  # 默认发送时间，格式 HH:MM
+  default_time: "09:00"
+  # 连续多日发送默认天数
+  default_consecutive_days: 5
