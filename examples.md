@@ -12,8 +12,12 @@ sources:
   dingtalk_via_dws: true
 
 matching:
-  strategy: contains
+  strategy: slice
   min_similarity: 0.6
+  slice:
+    cn_gram: 2
+    require_all_ascii: true
+    min_cn_hits: 1
   max_candidates: 5
 
 risk_rules:

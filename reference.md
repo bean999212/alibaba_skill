@@ -18,9 +18,12 @@ export TEST_REPORT_CONFIG=/path/to/config.yaml
 |-----|------|------|------|
 | `aone.project_search_enabled` | boolean | 否 | 是否启用 Aone 项目模糊搜索，默认 `true` |
 | `aone.project_id_fallback` | boolean | 否 | 未匹配到 Aone 项目时是否允许手动输入 ID，默认 `true` |
-| `matching.strategy` | string | 否 | 匹配策略：`contains`、`similarity`、`both`，默认 `contains` |
+| `matching.strategy` | string | 否 | 匹配策略：`contains`、`similarity`、`both`、`slice`，默认 `slice` |
 | `matching.min_similarity` | number | 否 | `similarity` 模式下的最小相似度阈值，默认 0.6 |
 | `matching.max_candidates` | number | 否 | 每个平台返回的最大候选数，默认 5 |
+| `matching.slice.cn_gram` | number | 否 | `slice` 模式下中文 n-gram 切片长度，默认 2（勿设为 1，会大量误召） |
+| `matching.slice.require_all_ascii` | boolean | 否 | `slice` 模式下是否要求查询中的英文/数字片全部命中，默认 `true` |
+| `matching.slice.min_cn_hits` | number | 否 | `slice` 模式下中文 n-gram 片至少命中的数量，默认 1 |
 | `matching.synonyms` | object | 否 | 同义词扩展表，用于 Aone 项目/阿拉丁测试计划首次未匹配时的二次搜索，结构见下文 |
 | `risk_rules` | object | 否 | 自定义风险阈值 |
 | `report.title` | string | 否 | 日报标题，默认「测试日报」 |
@@ -61,8 +64,26 @@ export TEST_REPORT_CONFIG=/path/to/config.yaml
 | `contains` | 需求名称包含用户输入即命中，按匹配位置与长度排序 | 用户输入较完整、名称规范 |
 | `similarity` | 计算字符串相似度，过滤低于 `min_similarity` 的结果 | 用户输入可能为简称或缩写 |
 | `both` | 先用 `contains` 粗筛，再用 `similarity` 精排 | 候选较多、希望兼顾召回与精度 |
+| `slice` | 把查询切成英文/数字片 + 中文 n-gram 片，词序无关地做覆盖判定 | 名称跨中英文、词序颠倒、易缺字，**优先召回**（推荐默认） |
 
-建议默认使用 `contains`，在名称不规范或缩写较多时切换到 `similarity` 或 `both`。
+建议默认使用 `slice`（召回率最高）；名称规范、输入完整时可用 `contains`，缩写较多时可用 `similarity` 或 `both`。
+
+### 2.2.1 切片匹配（`slice`，方案 A）
+
+**背景：** 在真实 AAT 测试计划数据上对查询「中文版bonus」做过对比：`contains` 召回 50%（漏掉「中文bonus正向(...)」缺「版」字、「bonus中文版-逆向」词序颠倒两条），`similarity`（difflib ratio，阈值 0.6）仅 25%，降到 0.58 也只有 50% 且引入误召。切片匹配在同批数据上召回 100%、无误召。
+
+**切片规则：**
+
+1. 归一化：查询与候选名称统一转小写。
+2. 切片：从**查询**中抽取
+   - 英文/数字连续片：正则 `[a-z0-9]+`（如 `bonus`）；
+   - 中文 n-gram 片：对每段连续中文按 `slice.cn_gram`（默认 2）滑窗切分（如「中文版」→ `中文`、`文版`）。
+3. 判定命中（词序无关）：某候选名称同时满足
+   - `require_all_ascii=true` 时，查询里的**每个**英文/数字片都作为子串出现在候选名称中；
+   - 命中的中文 n-gram 片数量 ≥ `slice.min_cn_hits`（默认 1）。
+4. 中文务必用 2-gram：降到单字（1-gram）会因「中」「版」等公共字把无关计划大量误召（实测准确率从 100% 掉到 67%）。
+
+**相关配置：** `matching.slice.cn_gram`、`matching.slice.require_all_ascii`、`matching.slice.min_cn_hits`。本策略以召回优先，命中结果同样全部返回给用户确认，不做截断。
 
 ### 2.3 候选展示格式（分两步顺序展示）
 

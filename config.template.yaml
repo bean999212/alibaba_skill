@@ -28,10 +28,19 @@ aone:
 
 # 需求模糊匹配配置
 matching:
-  # 匹配策略：contains / similarity / both
-  strategy: contains
+  # 匹配策略：contains / similarity / both / slice
+  # 名称跨中英文、词序可能颠倒、易缺字时优先用 slice（切片匹配），召回率最高
+  strategy: slice
   # similarity 模式下的最小相似度阈值（0~1）
   min_similarity: 0.6
+  # slice（切片匹配）参数
+  slice:
+    # 中文按 n-gram 切片长度，建议 2；设为 1 会因单字命中而大量误召
+    cn_gram: 2
+    # 查询里的英文/数字片是否必须全部命中
+    require_all_ascii: true
+    # 中文 n-gram 片至少命中的数量
+    min_cn_hits: 1
   # 每个平台返回的最大候选数
   max_candidates: 5
   # 同义词扩展表：当 Aone 项目或阿拉丁测试计划首次未匹配到时，按此处配置扩展关键词再次搜索

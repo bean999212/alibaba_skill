@@ -51,8 +51,14 @@ aone:
   project_search_enabled: true
 
 matching:
-  strategy: contains
+  # 匹配策略：contains / similarity / both / slice
+  # 名称跨中英文、词序可能颠倒、易缺字时，优先用 slice（切片匹配），召回率最高
+  strategy: slice
   min_similarity: 0.6
+  slice:
+    cn_gram: 2            # 中文按 n-gram 切片（建议 2；用 1 会因单字命中而大量误召）
+    require_all_ascii: true  # 查询里的英文/数字片必须全部命中
+    min_cn_hits: 1       # 中文 n-gram 片至少命中的数量
   max_candidates: 5
 
 report:
@@ -116,6 +122,8 @@ schedule:
   - 若首次无候选，按 `matching.synonyms` 同义词表扩展关键词后再次在列表页查询。搜到的全部计划（id+名称+测试周期）原样返回给用户多选确认。
 
 **全部返回（强制）：** 无论哪个维度（阿拉丁需求 / ione 需求 / Aone 项目 / 阿拉丁测试计划），全局模糊搜索命中的**所有**结果都必须原样返回给用户确认，不做数量截断、不预先过滤、也不替用户挑选。`max_candidates` 仅可用于结果的展示排序，**不得用于截断候选**；确保用户能看到并勾选全部模糊匹配到的内容。
+
+**切片匹配（`strategy: slice`，推荐默认，优先召回）：** 项目名称常跨中英文、词序颠倒或缺字（例如查询「中文版bonus」，真实计划名叫「bonus中文版-逆向」「中文bonus正向(...)」），此时 `contains` 会因严格子串漏掉、`similarity` 会因括号/后缀噪声稀释比值同样漏掉。切片匹配的判定方式：把**查询**切成「英文/数字连续片」（如 `bonus`）与「中文 n-gram 片」（`cn_gram` 默认 2，如 `中文`、`文版`）；某候选名称**同时满足**「查询里的英文/数字片全部作为子串命中」（`require_all_ascii`）且「命中的中文 n-gram 片数量 ≥ `min_cn_hits`（默认 1）」即判为命中，**词序无关**。中文务必用 2-gram，不要降到单字——单字会把仅含「中」等公共字的无关计划大量误召。本策略以召回优先，命中结果同样全部返回给用户确认，由用户勾选。
 
 ### 3. 用户确认与未匹配处理（分两步顺序确认）
 
