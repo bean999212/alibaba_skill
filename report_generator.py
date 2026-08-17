@@ -363,10 +363,11 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     module_counts = _count_by(all_bugs, "module", "未归类")
     developer_counts = _count_by(all_bugs, "developer", "未分配")
 
-    # 数据量判断：缺陷总数 <= 5 或 模块/开发责任人去重后 <= 3 时，用文字描述模块和开发者分布
-    use_text_for_distributions = (
-        total_bugs <= 5 or len(module_counts) <= 3 or len(developer_counts) <= 3
-    )
+    # 数据量判断（模块与开发者各自独立）：
+    # 缺陷总数 > 5 且该维度去重后 > 3 才渲染图表，否则用文字。
+    # 两维度独立判定，避免某一维度（如业务模块全部未归类）连坐掉另一维度的图表。
+    render_module = total_bugs > 5 and len(module_counts) > 3
+    render_developer = total_bugs > 5 and len(developer_counts) > 3
 
     # 每日缺陷走势渲染条件：测试时长 > 5 天 且 缺陷总数 > 5
     test_duration_days = data.get("test_duration_days", 0)
@@ -390,14 +391,14 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     summary_lines.append(f"<li>缺陷类型分布：{type_summary}</li>")
 
     # 第 3 点：业务模块分布
-    if use_text_for_distributions:
+    if not render_module:
         module_summary = _colored_count_items(all_bugs, "module", "未归类", "module")
         summary_lines.append(f"<li>业务模块分布：{module_summary}</li>")
     else:
         summary_lines.append('<li>业务模块分布：见下方图表</li>')
 
     # 第 4 点：开发责任人分布
-    if use_text_for_distributions:
+    if not render_developer:
         dev_summary = _colored_count_items(all_bugs, "developer", "未分配", "developer")
         summary_lines.append(f"<li>开发责任人分布：{dev_summary}</li>")
     else:
@@ -413,7 +414,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     chart_scripts: list[str] = []
     integer_ticks_js = "{ callback: function(value) { return Number.isInteger(value) ? value : ''; } }"
 
-    if not use_text_for_distributions:
+    if render_module:
         # 业务模块分布柱状图
         module_data_js = _chart_data(module_counts)
         module_colors_js = str(_CHART_COLORS[: len(module_counts)])
@@ -446,6 +447,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
   }});"""
         )
 
+    if render_developer:
         # 开发责任人分布柱状图
         developer_data_js = _chart_data(developer_counts)
         developer_colors_js = str(_CHART_COLORS[: len(developer_counts)])
