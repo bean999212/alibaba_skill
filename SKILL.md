@@ -498,7 +498,7 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 
 1. **生成高清 PNG 图片**：
    - 使用本地已安装的 Chrome（如 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`）结合 `puppeteer-core` 加载生成的 HTML 日报。
-   - 设置高分辨率截图：将页面 `viewport` 的 `deviceScaleFactor` 设为 `2` 或 `3`（例如 `page.setViewport({ width: 900, height: 600, deviceScaleFactor: 2 })`），确保文字、坐标轴、刻度、柱状/折线边缘清晰锐利。
+   - 设置高分辨率截图：将页面 `viewport` 的 `deviceScaleFactor` 设为 **`4`**（例如 `page.setViewport({ width: 900, height: 1600, deviceScaleFactor: 4 })`），图表容器基础尺寸建议 `width: 750px; height: 400px`，确保最终 PNG 宽度 ≥ 2500px（750×4=3000），在钉钉文档中显示时文字、坐标轴、刻度、柱状/折线边缘清晰锐利。`deviceScaleFactor` 低于 3 时图片在 Retina 屏上会明显模糊，**禁止使用 1 或 2**。
    - 等待 Chart.js 动画渲染完成后，按需对以下 `<canvas>` 分别截图：
      - `#moduleChart`：业务模块分布柱状图，保存为 `module-chart.png`。
      - `#developerChart`：开发责任人分布柱状图，保存为 `developer-chart.png`。
