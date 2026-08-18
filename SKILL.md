@@ -296,7 +296,7 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 
 **不包含「今日进展」模块（强制）**：日报不再输出「今日进展」这一行。无论 HTML 还是钉钉文档，「■ 整体概述」分区都只包含风险等级、风险说明/进度简述、测试进度 3 行，其后直接进入「■ 缺陷情况」横幅。禁止再新增或保留「今日进展」标签行与其值单元格。
 
-写入钉钉文档时，由于钉钉文档不渲染原始 HTML `<table>`，需将该 HTML 模板的结构等价转换为钉钉的 jsonml 表格（保留 5 列列宽、rowSpan/colSpan 合并、蓝色横幅 `fill: rgba(0, 96, 255, 0.98)` + 白色加粗文字），再通过 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。
+写入钉钉文档时，由于钉钉文档不渲染原始 HTML `<table>`，需将该 HTML 模板的结构等价转换为钉钉的 jsonml 表格（保留 5 列列宽、rowSpan/colSpan 合并、蓝色横幅 `fill: rgba(0, 96, 255, 0.98)` + 白色加粗文字 + **文字左对齐**——HTML 横幅 `.banner` 无 `text-align` 属性，默认左对齐，jsonml 横幅 `p` 节点**不得设 `jc`**，保持默认左对齐），再通过 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。
 
 样式映射补充：模板中需要居中的单元格在 jsonml 中通过「`tc` 设 `vAlign: "middle"`（垂直居中）+ 其内 `p` 设 `jc: "center"`（水平居中）」实现。具体包括 `.label-center` 标签单元格（“项目进度”“汇总”“new”“later”），以及 `.cell-center` 单元格——即「■ 整体概述」中「风险等级」「风险说明 / 进度简述」「测试进度」这 3 个**左侧标签格**。其余普通 `.label` 与正文单元格（含上述三行右侧的值单元格）保持 `vAlign: "top"`、`p` 不设 `jc`（默认左对齐）即可。
 
