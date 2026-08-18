@@ -687,6 +687,25 @@ def _build_issue_notes(data: dict[str, Any]) -> str:
     return "无"
 
 
+def _build_change_notes(data: dict[str, Any]) -> str:
+    """
+    构建「■ 变更卡点」分区内容（格式与「■ 问题记录」保持一致）。
+
+    用于记录测试周期内识别到的需求变更、排期调整、Scope 变动、修复方案
+    变更、上线计划变动等，以及这些变更带来的阻塞或影响；同时包含群聊中
+    明确承诺的行动项、负责人与截止时间、关键文档 / 链接等。每条结论须
+    附带原始聊天记录作为证据（``> YYYY-MM-DD HH:MM:SS 发言人： "内容"``）。
+
+    优先级：
+    1. 若 data 中已提供 ``change_notes`` / ``group_chat_changes``，直接使用。
+    2. 否则返回「无」。
+    """
+    existing = (data.get("change_notes") or data.get("group_chat_changes") or "").strip()
+    if existing:
+        return existing
+    return "无"
+
+
 def _build_aone_bug_url(aone_project_id: int | None, bug_id: int | str | None) -> str | None:
     """根据 Aone 项目 ID 与 bug ID 构造缺陷详情链接；缺少任一参数时返回 None。"""
     if not aone_project_id or not bug_id:
@@ -762,6 +781,7 @@ def render_html(template_html: str, data: dict[str, Any]) -> str:
         "{new缺陷列表}": _build_bug_list(data.get("new_bugs", []), default_project_id),
         "{later缺陷列表}": _build_bug_list(data.get("later_bugs", []), default_project_id),
         "{问题记录}": _build_issue_notes(data).replace("\n", "<br>"),
+        "{变更卡点}": _build_change_notes(data).replace("\n", "<br>"),
     }
 
     for key, value in placeholders.items():
@@ -812,6 +832,7 @@ def _demo_data() -> dict[str, Any]:
         "new_bug_focus": "菲律宾站点税费展示",
         "defect_summary": "共计 12 个，待解决 3 个，延期 0 个",
         "issue_notes": "1. 菲律宾站点税费接口返回字段需与产品确认精度规则，当前测试按四舍五入处理。\n2. 日本站点运费计算依赖的汇率表版本待运营侧最终确认，预计明日同步。\n3. 当日群聊未识别到明显卡点/待确认点。",
+        "change_notes": "1. 菲律宾站点税费接口精度规则由产品侧发起变更，原定的四舍五入方案改为银行家舍入，影响 12 条用例断言。\n> 2026-07-20 15:32:18 产品-孙七： \"@测试 菲律宾税费接口的舍入规则要改成银行家舍入，今天下班前确认影响面\"\n2. 日本站点运费汇率表版本由运营侧调整为每日 10:00 同步，与当前测试拉取节奏不一致。\n> 2026-07-20 18:05:41 运营-周八： \"汇率表之后每天 10 点更新一版，测试用例建议避开整点断言\"\n3. 当日群聊未识别到明显变更。",
 
         "test_plans": [
             {"name": "集运三期-菲律宾", "total": 40, "executed": 25, "failed": 1},
