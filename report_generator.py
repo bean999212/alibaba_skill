@@ -792,6 +792,474 @@ def render_html(template_html: str, data: dict[str, Any]) -> str:
     return template_html
 
 
+# ---------------------------------------------------------------------------
+# jsonml helpers & render_jsonml
+# ---------------------------------------------------------------------------
+
+_COLOR_MAP = {
+    "metric-danger": "#ff4d4f",
+    "metric-warning": "#faad14",
+    "metric-success": "#52c41a",
+    "risk-high": "#ff4d4f",
+    "risk-medium": "#faad14",
+    "risk-low": "#52c41a",
+    "risk-none": "#595959",
+}
+
+_RISK_EMOJI = {"高": "🔴", "中": "🟡", "低": "🟢", "无": "⚪"}
+
+
+def _j_leaf(text: str, color: str | None = None, bold: bool = False) -> list:
+    """jsonml leaf span: ["span", {"data-type": "text"}, ["span", {"data-type": "leaf", ...}, "text"]]"""
+    attrs: dict[str, Any] = {"data-type": "leaf"}
+    if color:
+        attrs["color"] = color
+    if bold:
+        attrs["bold"] = True
+    return ["span", {"data-type": "text"}, ["span", attrs, text]]
+
+
+def _j_para(*spans: list, list_attrs: dict | None = None, jc: str | None = None) -> list:
+    """jsonml paragraph: ["p", {attrs}, *spans]"""
+    attrs: dict[str, Any] = {}
+    if list_attrs:
+        attrs["list"] = list_attrs
+    if jc:
+        attrs["jc"] = jc
+    return ["p", attrs, *spans]
+
+
+def _j_a_leaf(text: str, href: str) -> list:
+    """jsonml hyperlink: ["a", {"href": href}, ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, text]]]"""
+    return ["a", {"href": href}, ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, text]]]
+
+
+def _j_banner_row(text: str, col_span: int) -> list:
+    """Blue banner table row with white bold left-aligned text."""
+    return [
+        "tr", {},
+        ["tc", {"colSpan": col_span, "fill": "rgba(0,96,255,0.98)", "vAlign": "middle"},
+         _j_para(_j_leaf(text, bold=True, color="#FFFFFF"))],
+    ]
+
+
+def _j_colored_count_items(
+    bugs: list[dict[str, Any]], key: str, default: str, level_key: str
+) -> list[list]:
+    """Like _colored_count_items but returns a list of jsonml spans (numbers colored per thresholds)."""
+    counts: dict[str, int] = {}
+    for bug in bugs:
+        value = bug.get(key) or default
+        counts[value] = counts.get(value, 0) + 1
+    if not counts:
+        return [_j_leaf("无")]
+    danger, warning = _METRIC_THRESHOLDS[level_key]
+    spans: list[list] = []
+    items = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    for i, (label, count) in enumerate(items):
+        if i > 0:
+            spans.append(_j_leaf("，"))
+        level = _metric_level(count, danger, warning)
+        color = _COLOR_MAP.get(f"metric-{level}")
+        spans.append(_j_leaf(f"{label} "))
+        spans.append(_j_leaf(str(count), color=color))
+        spans.append(_j_leaf(" 个"))
+    return spans
+
+
+def _j_brief_paragraphs(data: dict[str, Any]) -> list[list]:
+    """Progress brief paragraphs in jsonml (same logic as build_progress_brief)."""
+    exec_rate = data.get("execution_rate", 0.0) * 100
+    total_defects = data.get("total_defects", 0)
+    executed_cases = data.get("executed_cases", 0)
+    total_cases = data.get("total_cases", 0)
+    failed_cases = data.get("failed_cases", 0)
+    blocked_cases = data.get("blocked_cases", 0)
+    new_bugs = data.get("new_bugs", [])
+    green = "#52c41a"
+
+    # Line 1
+    line1: list[list] = [
+        _j_leaf("测试执行进度："),
+        _j_leaf(f"{exec_rate:.1f}%", color=green),
+        _j_leaf(f"，缺陷总数：{total_defects}"),
+    ]
+
+    # Line 2
+    line2: list[list] = [
+        _j_leaf("今日共执行 "),
+        _j_leaf(f"{executed_cases}/{total_cases}", color=green),
+        _j_leaf(" 条用例"),
+    ]
+    if failed_cases:
+        line2.append(_j_leaf(f"，失败 {failed_cases} 条"))
+    else:
+        line2.append(_j_leaf("，无失败用例"))
+    if blocked_cases:
+        line2.append(_j_leaf(f"，阻塞 {blocked_cases} 条"))
+    if new_bugs:
+        line2.append(
+            _j_leaf(f"，当日新提 {len(new_bugs)} 个 bug，{_summarize_severities(new_bugs)}")
+        )
+    else:
+        line2.append(_j_leaf("，当日无新增缺陷"))
+    line2.append(_j_leaf("。"))
+    if data.get("failure_focus"):
+        line2.append(_j_leaf(f"失败主要集中在{data['failure_focus']}。"))
+    if data.get("new_bug_focus"):
+        line2.append(_j_leaf(f"新增缺陷主要涉及{data['new_bug_focus']}。"))
+
+    # Line 3
+    unclosed_p0_p1 = data.get("unclosed_p0_p1", 0)
+    if unclosed_p0_p1:
+        summary_text = f"未关闭 P0/P1 缺陷 {unclosed_p0_p1} 个。"
+    else:
+        summary_text = "无未关闭 P0/P1 缺陷。"
+    line3: list[list] = [_j_leaf(summary_text)]
+
+    list_attr: dict[str, Any] = {"listId": "brief-list", "level": 0, "isOrdered": True}
+    return [
+        _j_para(*line1, list_attrs={**list_attr, "start": 1}),
+        _j_para(*line2, list_attrs={**list_attr, "start": 2}),
+        _j_para(*line3, list_attrs={**list_attr, "start": 3}),
+    ]
+
+
+def _j_risk_paragraphs(data: dict[str, Any]) -> list[list]:
+    """Risk description paragraphs in jsonml (same logic as build_risk_description)."""
+    reasons = data.get("risk_reasons", [])
+    risk_level = data.get("risk_level", "")
+    risk_css_map = {"高": "risk-high", "中": "risk-medium", "低": "risk-low"}
+    cls = risk_css_map.get(risk_level)
+    risk_color = _COLOR_MAP.get(cls) if cls else None
+
+    list_attr: dict[str, Any] = {"listId": "brief-list", "level": 0, "isOrdered": True}
+    paragraphs: list[list] = []
+
+    if reasons:
+        for idx, reason in enumerate(reasons, 1):
+            text = f"{reason}。"
+            paragraphs.append(
+                _j_para(_j_leaf(text, color=risk_color), list_attrs={**list_attr, "start": idx})
+            )
+    else:
+        paragraphs.append(
+            _j_para(
+                _j_leaf("当前存在测试风险。", color=risk_color),
+                list_attrs={**list_attr, "start": 1},
+            )
+        )
+
+    return paragraphs
+
+
+def _j_progress_paragraphs(data: dict[str, Any]) -> list[list]:
+    """Test progress paragraphs in jsonml (same logic as _build_test_progress_text)."""
+    plans = data.get("test_plans", [])
+    notes = (data.get("test_progress_notes") or "").strip()
+    green = "#52c41a"
+
+    base_spans: list[list] | None = None
+
+    if len(plans) == 1:
+        p = plans[0]
+        base_spans = [
+            _j_leaf(f"{p['name']}："),
+            _j_leaf(f"{p['executed']}/{p['total']}", color=green),
+            _j_leaf(f"，失败用例：{p.get('failed', 0)}"),
+        ]
+    else:
+        total = sum(p["total"] for p in plans) or data.get("total_cases", 0)
+        executed = sum(p["executed"] for p in plans) or data.get("executed_cases", 0)
+        failed = sum(p.get("failed", 0) for p in plans) or data.get("failed_cases", 0)
+        if total > 0:
+            rate = executed / total * 100
+            base_spans = [
+                _j_leaf("测试执行进度："),
+                _j_leaf(f"{rate:.1f}%", color=green),
+                _j_leaf(f"，失败用例：{failed}"),
+            ]
+
+    paragraphs: list[list] = []
+    if base_spans:
+        paragraphs.append(_j_para(*base_spans))
+        if notes:
+            paragraphs.append(_j_para(_j_leaf(f"文档补充：{notes}")))
+    elif notes:
+        paragraphs.append(_j_para(_j_leaf("数据来自文档：")))
+        paragraphs.append(_j_para(_j_leaf(notes)))
+    else:
+        paragraphs.append(_j_para(_j_leaf("暂无测试计划数据")))
+
+    return paragraphs
+
+
+def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> list[list]:
+    """Summary cell paragraphs in jsonml (same logic as _build_summary_cell)."""
+    all_bugs = data.get("all_bugs") or (data.get("new_bugs", []) + data.get("later_bugs", []))
+    total_bugs = len(all_bugs)
+
+    new_bugs = data.get("new_bugs", [])
+    later_bugs = data.get("later_bugs", [])
+    unresolved_count = data.get("unresolved_count", len(new_bugs))
+    delayed_count = data.get("delayed_count", len(later_bugs))
+
+    module_counts = _count_by(all_bugs, "module", "未归类")
+    developer_counts = _count_by(all_bugs, "developer", "未分配")
+
+    render_module = total_bugs > 5 and len(module_counts) > 3
+    render_developer = total_bugs > 5 and len(developer_counts) > 3
+
+    test_duration_days = data.get("test_duration_days", 0)
+    render_trend = test_duration_days > 5 and total_bugs > 5
+    daily_counts = _parse_daily_bug_counts(data) if render_trend else []
+    render_trend = render_trend and bool(daily_counts)
+
+    # Line 1: 缺陷总数 / 待解决 / 延期
+    t_d, t_w = _METRIC_THRESHOLDS["total"]
+    u_d, u_w = _METRIC_THRESHOLDS["unresolved"]
+    d_d, d_w = _METRIC_THRESHOLDS["delayed"]
+
+    total_color = _COLOR_MAP.get(f"metric-{_metric_level(total_bugs, t_d, t_w)}")
+    unresolved_color = _COLOR_MAP.get(f"metric-{_metric_level(unresolved_count, u_d, u_w)}")
+    delayed_color = _COLOR_MAP.get(f"metric-{_metric_level(delayed_count, d_d, d_w)}")
+
+    line1: list[list] = [
+        _j_leaf("缺陷总数 "),
+        _j_leaf(str(total_bugs), color=total_color),
+        _j_leaf(" 个，待解决 "),
+        _j_leaf(str(unresolved_count), color=unresolved_color),
+        _j_leaf(" 个，延期 "),
+        _j_leaf(str(delayed_count), color=delayed_color),
+        _j_leaf(" 个"),
+    ]
+
+    # Line 2: 缺陷类型分布
+    line2: list[list] = [_j_leaf("缺陷类型分布：")] + _j_colored_count_items(
+        all_bugs, "type", "未分类", "type"
+    )
+
+    # Line 3: 业务模块分布
+    if not render_module:
+        line3: list[list] = [_j_leaf("业务模块分布：")] + _j_colored_count_items(
+            all_bugs, "module", "未归类", "module"
+        )
+    else:
+        line3 = [_j_leaf("业务模块分布：见下方图表")]
+
+    # Line 4: 开发责任人分布
+    if not render_developer:
+        line4: list[list] = [_j_leaf("开发责任人分布：")] + _j_colored_count_items(
+            all_bugs, "developer", "未分配", "developer"
+        )
+    else:
+        line4 = [_j_leaf("开发责任人分布：见下方图表")]
+
+    # Line 5: 未关闭缺陷分析
+    analysis = _build_unclosed_defect_analysis(all_bugs)
+    line5: list[list] = [_j_leaf(f"未关闭缺陷分析：{analysis}")]
+
+    # Build ordered list paragraphs
+    list_attr: dict[str, Any] = {"listId": "summary-list", "level": 0, "isOrdered": True}
+    paragraphs: list[list] = [
+        _j_para(*line1, list_attrs={**list_attr, "start": 1}),
+        _j_para(*line2, list_attrs={**list_attr, "start": 2}),
+        _j_para(*line3, list_attrs={**list_attr, "start": 3}),
+        _j_para(*line4, list_attrs={**list_attr, "start": 4}),
+        _j_para(*line5, list_attrs={**list_attr, "start": 5}),
+    ]
+
+    # Image placeholders (after the ordered list)
+    if render_module:
+        paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("module", "")}]])
+    if render_developer:
+        paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("developer", "")}]])
+    if render_trend:
+        paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("trend", "")}]])
+
+    return paragraphs
+
+
+def _j_bug_paragraphs(bugs: list[dict[str, Any]], data: dict[str, Any]) -> list[list]:
+    """Bug list paragraphs in jsonml (same logic as _build_bug_list)."""
+    project_ids = data.get("aone_project_ids")
+    default_project_id = project_ids[0] if project_ids else data.get("aone_project_id")
+
+    if not bugs:
+        return [_j_para(_j_leaf("无"))]
+
+    paragraphs: list[list] = []
+    for idx, bug in enumerate(bugs, 1):
+        title = bug.get("title", "")
+        bug_project_id = bug.get("aone_project_id") or default_project_id
+        url = bug.get("url") or _build_aone_bug_url(
+            bug_project_id, bug.get("bug_id") or bug.get("id")
+        )
+        owner = bug.get("owner", "")
+
+        spans: list[list] = [_j_leaf(f"{idx}. ")]
+        if url:
+            spans.append(_j_a_leaf(title, url))
+        else:
+            spans.append(_j_leaf(title))
+        spans.append(_j_leaf(f" ｜ @{owner}"))
+
+        paragraphs.append(_j_para(*spans))
+
+    return paragraphs
+
+
+def render_jsonml(data: dict[str, Any], image_srcs: dict[str, str] | None = None) -> list:
+    """
+    Generate DingTalk jsonml table for the daily test risk report.
+
+    The output is strictly consistent with render_html() — same text, same
+    coloring logic, same data thresholds — but produces jsonml nodes instead
+    of HTML strings.
+    """
+    image_srcs = image_srcs or {}
+
+    project_name = data.get("requirement_name", "项目")
+    risk_level = data.get("risk_level", "")
+    is_no_risk = risk_level == "无"
+
+    # Risk emoji + color
+    risk_emoji = _RISK_EMOJI.get(risk_level, "⚪")
+    risk_text = f"{risk_emoji} {risk_level}"
+    risk_css = (
+        {"高": "risk-high", "中": "risk-medium", "低": "risk-low", "无": "risk-none"}
+        .get(risk_level, "risk-none")
+    )
+    risk_color = _COLOR_MAP[risk_css]
+
+    # --- Row 1: Banner ---
+    row1 = _j_banner_row(f"■ {project_name}整体概述", 5)
+
+    # --- Row 2: 项目进度 + 风险等级 ---
+    row2 = [
+        "tr", {},
+        ["tc", {"rowSpan": 3, "vAlign": "middle"},
+         _j_para(_j_leaf("项目进度"), jc="center")],
+        ["tc", {"vAlign": "middle"},
+         _j_para(_j_leaf("风险等级"), jc="center")],
+        ["tc", {"colSpan": 3, "vAlign": "top"},
+         _j_para(_j_leaf(risk_text, color=risk_color))],
+    ]
+
+    # --- Row 3: Progress brief / Risk description ---
+    label = "进度简述" if is_no_risk else "风险说明"
+    brief_paragraphs = _j_brief_paragraphs(data) if is_no_risk else _j_risk_paragraphs(data)
+
+    row3 = [
+        "tr", {},
+        ["tc", {"hidden": True}],
+        ["tc", {"vAlign": "middle"},
+         _j_para(_j_leaf(label), jc="center")],
+        ["tc", {"colSpan": 3, "vAlign": "top"},
+         *brief_paragraphs],
+    ]
+
+    # --- Row 4: Test progress ---
+    progress_paragraphs = _j_progress_paragraphs(data)
+
+    row4 = [
+        "tr", {},
+        ["tc", {"hidden": True}],
+        ["tc", {"vAlign": "middle"},
+         _j_para(_j_leaf("测试进度"), jc="center")],
+        ["tc", {"colSpan": 3, "vAlign": "top"},
+         *progress_paragraphs],
+    ]
+
+    # --- Row 5: Banner ---
+    row5 = _j_banner_row("■ 缺陷情况", 5)
+
+    # --- Row 6: Summary ---
+    summary_paragraphs = _j_summary_paragraphs(data, image_srcs)
+
+    row6 = [
+        "tr", {},
+        ["tc", {"vAlign": "middle"},
+         _j_para(_j_leaf("汇总"), jc="center")],
+        ["tc", {"colSpan": 4, "vAlign": "top"},
+         *summary_paragraphs],
+    ]
+
+    # --- Row 7: new bugs ---
+    new_paragraphs = _j_bug_paragraphs(data.get("new_bugs", []), data)
+
+    row7 = [
+        "tr", {},
+        ["tc", {"vAlign": "middle"},
+         _j_para(_j_leaf("new"), jc="center")],
+        ["tc", {"colSpan": 4, "vAlign": "top"},
+         *new_paragraphs],
+    ]
+
+    # --- Row 8: later bugs ---
+    later_paragraphs = _j_bug_paragraphs(data.get("later_bugs", []), data)
+
+    row8 = [
+        "tr", {},
+        ["tc", {"vAlign": "middle"},
+         _j_para(_j_leaf("later"), jc="center")],
+        ["tc", {"colSpan": 4, "vAlign": "top"},
+         *later_paragraphs],
+    ]
+
+    # --- Row 9: Banner ---
+    row9 = _j_banner_row("■ 问题记录", 5)
+
+    # --- Row 10: Issue notes ---
+    issue_text = _build_issue_notes(data)
+    if issue_text.strip():
+        issue_lines = [line for line in issue_text.split("\n") if line.strip()]
+        issue_paragraphs = [_j_para(_j_leaf(line)) for line in issue_lines]
+    else:
+        issue_paragraphs = [_j_para(_j_leaf("无"))]
+
+    row10 = [
+        "tr", {},
+        ["tc", {"colSpan": 5, "vAlign": "top"},
+         *issue_paragraphs],
+    ]
+
+    # --- Row 11: Banner ---
+    row11 = _j_banner_row("■ 变更卡点", 5)
+
+    # --- Row 12: Change notes ---
+    change_text = _build_change_notes(data)
+    if change_text.strip():
+        change_lines = [line for line in change_text.split("\n") if line.strip()]
+        change_paragraphs = [_j_para(_j_leaf(line)) for line in change_lines]
+    else:
+        change_paragraphs = [_j_para(_j_leaf("无"))]
+
+    row12 = [
+        "tr", {},
+        ["tc", {"colSpan": 5, "vAlign": "top"},
+         *change_paragraphs],
+    ]
+
+    # --- Assemble table ---
+    return [
+        "table",
+        {"colsWidth": [150, 170, 227, 227, 227]},
+        row1, row2, row3, row4,
+        row5, row6, row7, row8,
+        row9, row10,
+        row11, row12,
+    ]
+
+
+def generate_daily_report_jsonml(
+    data: dict[str, Any], image_srcs: dict[str, str] | None = None
+) -> list:
+    """生成日报 jsonml（DingTalk 富文本表格），包装为 root 节点供 dws doc create 使用。"""
+    table = render_jsonml(data, image_srcs)
+    return ["root", {}, table]
+
+
 def generate_daily_report(data: dict[str, Any], config: dict[str, Any] | None = None) -> str:
     """生成日报 HTML。"""
     template_html = TEMPLATE_PATH.read_text(encoding="utf-8")
