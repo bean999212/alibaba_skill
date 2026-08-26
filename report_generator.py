@@ -290,6 +290,7 @@ _METRIC_THRESHOLDS = {
     "total": (10, 5),       # (danger, warning)
     "unresolved": (5, 1),
     "delayed": (1, 0),
+    "today": (5, 1),
     "type": (5, 2),
     "module": (4, 2),
     "developer": (4, 2),
@@ -383,7 +384,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     构建「■ 缺陷情况」→「汇总」单元格的完整 HTML 内容。
 
     内容采用有序列表，每点独占一行：
-    1. 缺陷总数 / 待解决 / 延期（关键数值按状态着色）
+    1. 缺陷总数 / 总共待解决 / 总共延期 / 当日新增缺陷数（关键数值按状态着色）
     2. 缺陷类型分布（文字，数字着色）
     3. 业务模块分布（数据少用文字+着色，数据多→见下方图表）
     4. 开发责任人分布（数据少用文字+着色，数据多→见下方图表）
@@ -391,12 +392,22 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     6. 3 个统计图固定放在本单元格最下方：业务模块分布 → 开发责任人分布 → 每日缺陷走势（满足条件时）
     """
     all_bugs = data.get("all_bugs") or (data.get("new_bugs", []) + data.get("later_bugs", []))
-    total_bugs = len(all_bugs)
+    total_defect_count = data.get("total_defect_count", len(all_bugs))
 
     new_bugs = data.get("new_bugs", [])
     later_bugs = data.get("later_bugs", [])
     unresolved_count = data.get("unresolved_count", len(new_bugs))
     delayed_count = data.get("delayed_count", len(later_bugs))
+
+    # 当日新增缺陷数：优先取显式字段，否则从 all_bugs 按 created_date 聚合当天
+    today_bug_count = data.get("today_bug_count")
+    if today_bug_count is None:
+        from datetime import date as _date
+        today_str = _date.today().isoformat()
+        today_bug_count = sum(
+            1 for bug in all_bugs
+            if (bug.get("created_date") or "").startswith(today_str)
+        )
 
     module_counts = _count_by(all_bugs, "module", "未归类")
     developer_counts = _count_by(all_bugs, "developer", "未分配")
@@ -404,24 +415,26 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     # 数据量判断（模块与开发者各自独立）：
     # 缺陷总数 > 5 且该维度去重后 > 3 才渲染图表，否则用文字。
     # 两维度独立判定，避免某一维度（如业务模块全部未归类）连坐掉另一维度的图表。
-    render_module = total_bugs > 5 and len(module_counts) > 3
-    render_developer = total_bugs > 5 and len(developer_counts) > 3
+    render_module = total_defect_count > 5 and len(module_counts) > 3
+    render_developer = total_defect_count > 5 and len(developer_counts) > 3
 
     # 每日缺陷走势渲染条件：测试时长 > 5 天 且 缺陷总数 > 5
     test_duration_days = data.get("test_duration_days", 0)
-    render_trend = test_duration_days > 5 and total_bugs > 5
+    render_trend = test_duration_days > 5 and total_defect_count > 5
     daily_counts = _parse_daily_bug_counts(data) if render_trend else []
     render_trend = render_trend and bool(daily_counts)
 
-    # 第 1 点：缺陷总数 / 待解决 / 延期，数值着色
+    # 第 1 点：缺陷总数 / 总共待解决 / 总共延期 / 当日新增缺陷数，数值着色
     t_d, t_w = _METRIC_THRESHOLDS["total"]
     u_d, u_w = _METRIC_THRESHOLDS["unresolved"]
     d_d, d_w = _METRIC_THRESHOLDS["delayed"]
-    total_html = _metric_span(total_bugs, _metric_level(total_bugs, t_d, t_w))
+    td_d, td_w = _METRIC_THRESHOLDS["today"]
+    total_html = _metric_span(total_defect_count, _metric_level(total_defect_count, t_d, t_w))
     unresolved_html = _metric_span(unresolved_count, _metric_level(unresolved_count, u_d, u_w))
     delayed_html = _metric_span(delayed_count, _metric_level(delayed_count, d_d, d_w))
+    today_html = _metric_span(today_bug_count, _metric_level(today_bug_count, td_d, td_w))
     summary_lines = [
-        f"<li>缺陷总数 {total_html} 个，待解决 {unresolved_html} 个，延期 {delayed_html} 个{_build_trend_suffix(daily_counts)}</li>"
+        f"<li>缺陷总数 {total_html} 个，总共待解决 {unresolved_html} 个，总共延期 {delayed_html} 个，当日新增缺陷数 {today_html} 个{_build_trend_suffix(daily_counts)}</li>"
     ]
 
     # 第 2 点：缺陷类型分布
@@ -1035,40 +1048,54 @@ def _j_progress_paragraphs(data: dict[str, Any]) -> list[list]:
 def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> list[list]:
     """Summary cell paragraphs in jsonml (same logic as _build_summary_cell)."""
     all_bugs = data.get("all_bugs") or (data.get("new_bugs", []) + data.get("later_bugs", []))
-    total_bugs = len(all_bugs)
+    total_defect_count = data.get("total_defect_count", len(all_bugs))
 
     new_bugs = data.get("new_bugs", [])
     later_bugs = data.get("later_bugs", [])
     unresolved_count = data.get("unresolved_count", len(new_bugs))
     delayed_count = data.get("delayed_count", len(later_bugs))
 
+    # 当日新增缺陷数：优先取显式字段，否则从 all_bugs 按 created_date 聚合当天
+    today_bug_count = data.get("today_bug_count")
+    if today_bug_count is None:
+        from datetime import date as _date
+        today_str = _date.today().isoformat()
+        today_bug_count = sum(
+            1 for bug in all_bugs
+            if (bug.get("created_date") or "").startswith(today_str)
+        )
+
     module_counts = _count_by(all_bugs, "module", "未归类")
     developer_counts = _count_by(all_bugs, "developer", "未分配")
 
-    render_module = total_bugs > 5 and len(module_counts) > 3
-    render_developer = total_bugs > 5 and len(developer_counts) > 3
+    render_module = total_defect_count > 5 and len(module_counts) > 3
+    render_developer = total_defect_count > 5 and len(developer_counts) > 3
 
     test_duration_days = data.get("test_duration_days", 0)
-    render_trend = test_duration_days > 5 and total_bugs > 5
+    render_trend = test_duration_days > 5 and total_defect_count > 5
     daily_counts = _parse_daily_bug_counts(data) if render_trend else []
     render_trend = render_trend and bool(daily_counts)
 
-    # Line 1: 缺陷总数 / 待解决 / 延期
+    # Line 1: 缺陷总数 / 总共待解决 / 总共延期 / 当日新增缺陷数
     t_d, t_w = _METRIC_THRESHOLDS["total"]
     u_d, u_w = _METRIC_THRESHOLDS["unresolved"]
     d_d, d_w = _METRIC_THRESHOLDS["delayed"]
+    td_d, td_w = _METRIC_THRESHOLDS["today"]
 
-    total_color = _COLOR_MAP.get(f"metric-{_metric_level(total_bugs, t_d, t_w)}")
+    total_color = _COLOR_MAP.get(f"metric-{_metric_level(total_defect_count, t_d, t_w)}")
     unresolved_color = _COLOR_MAP.get(f"metric-{_metric_level(unresolved_count, u_d, u_w)}")
     delayed_color = _COLOR_MAP.get(f"metric-{_metric_level(delayed_count, d_d, d_w)}")
+    today_color = _COLOR_MAP.get(f"metric-{_metric_level(today_bug_count, td_d, td_w)}")
 
     line1: list[list] = [
         _j_leaf("缺陷总数 "),
-        _j_leaf(str(total_bugs), color=total_color),
-        _j_leaf(" 个，待解决 "),
+        _j_leaf(str(total_defect_count), color=total_color),
+        _j_leaf(" 个，总共待解决 "),
         _j_leaf(str(unresolved_count), color=unresolved_color),
-        _j_leaf(" 个，延期 "),
+        _j_leaf(" 个，总共延期 "),
         _j_leaf(str(delayed_count), color=delayed_color),
+        _j_leaf(" 个，当日新增缺陷数 "),
+        _j_leaf(str(today_bug_count), color=today_color),
         _j_leaf(f" 个{_build_trend_suffix(daily_counts)}"),
     ]
 
