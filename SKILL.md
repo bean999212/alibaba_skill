@@ -509,11 +509,12 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 2. **不再保留文字汇总**：
    - 当高清 PNG 成功生成并插入文档后，文档中**不再保留**「图表数据汇总」标题及其文字版分布/走势数据；图片本身即为图表的唯一展示形式。
    - 仅当 PNG 生成失败或插入全部失败时，才允许在文档中回退为文字汇总，并明确告知用户「图表转 PNG 失败，当前以文字汇总展示」。
-3. **插入钉钉文档**：
+3. **插入钉钉文档**（三步流程，`dws doc media insert` 不会把图片写入表格单元格，只追加为文档末尾独立段落）：
    - 图表 PNG 必须最终落在「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。
-   - 推荐做法：先创建/更新文档，使「汇总」单元格仅包含文字汇总内容；随后对需要渲染为图表的 PNG 调用 `dws doc media insert --node <doc_node_id> --file <png_path> --name <显示名称> -y` 临时插入文档（例如表格末尾），回读后获取各自的内部资源 `src`。
-   - 将获取到的 `img` 节点追加到「汇总」单元格的 JSONML 内容最下方，使用 `dws doc block update --node <doc_node_id> --block-id <summary_tc_uuid> --content-format jsonml --no-fix-jsonml --element "$(cat <jsonml_file>)" -y` 精确更新汇总单元格，防止服务端把图片段落移出表格。
-   - 更新后使用 `dws doc read --node <doc_node_id> --content-format jsonml` 回读，确认 `img` 节点位于「汇总」单元格内部且 `src` 指向钉钉内部资源路径；同时删除表格外部临时插入的图片节点，避免重复展示。
+   - **步骤 A — 上传图片获取 resourceUrl**：对每张需要渲染的 PNG 调用 `dws doc media insert --node <doc_node_id> --file <png_path> --name <显示名称> -y`，命令返回的 `resourceUrl` 形如 `/core/api/resources/img/<hash>`，记录下来备用。此时图片仅作为独立段落追加在文档末尾，**不在表格内**。
+   - **步骤 B — 将 img 写入汇总单元格**：先用 `dws doc read --node <doc_node_id> --content-format jsonml` 回读文档，找到「汇总」单元格的 `tc` 节点及其 `uuid`；将步骤 A 获取的 `resourceUrl` 填入该 `tc` 内已有的 `img` 节点的 `src` 属性（若 jsonml 生成时已预留了空 `src` 的 `img` 占位）或在 `tc` 末尾追加 `["p",{},["img",{"src":"<resourceUrl>"}]]` 段落；然后调用 `dws doc block update --node <doc_node_id> --block-id <summary_tc_uuid> --content-format jsonml --fix-jsonml --element "$(cat <jsonml_file>)" -y` 精确更新汇总单元格。**注意：`block update` 只有 `--fix-jsonml` 标志，没有 `--no-fix-jsonml`。**
+   - **步骤 C — 删除临时图片段落**：用 `dws doc block delete --node <doc_node_id> --block-id <临时段落uuid> -y` **逐个**删除步骤 A 在文档末尾创建的独立图片段落（不可 `&&` 链式调用，须逐个执行）。
+   - 更新后使用 `dws doc read --node <doc_node_id> --content-format jsonml` 回读，确认 `img` 节点位于「汇总」单元格内部且 `src` 指向钉钉内部资源路径，同时确认文档末尾无残留的临时图片段落。
 4. **插入语雀文档**：
    - 通过语雀文档编辑器或对应 API 将需要渲染的 PNG 上传到文档附件，并插入到「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序同样为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。
    - 上传后重新读取文档内容，确认图片位于「汇总」单元格内。
