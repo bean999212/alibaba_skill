@@ -281,15 +281,15 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 
    | HTML CSS class | 色值 | jsonml leaf `color` | 使用场景 |
    |---------------|------|-------------------|---------|
-   | `metric-danger` | `#ff4d4f` | `"#ff4d4f"` | 缺陷总数、延期数等超阈值数值 |
-   | `metric-warning` | `#faad14` | `"#faad14"` | 待解决数等需关注数值 |
+   | `metric-danger` | `#ff4d4f` | `"#ff4d4f"` | 缺陷总数、总共延期等超阈值数值 |
+   | `metric-warning` | `#faad14` | `"#faad14"` | 总共待解决、当日新增缺陷数等需关注数值 |
    | `metric-success` | `#52c41a` | `"#52c41a"` | 测试执行进度百分比、已执行/总用例数 |
    | `risk-high` | `#ff4d4f` | `"#ff4d4f"` | 风险等级为「高」时的风险说明正文 |
    | `risk-medium` | `#faad14` | `"#faad14"` | 风险等级为「中」时的风险说明正文 |
    | `risk-low` | `#52c41a` | `"#52c41a"` | 风险等级为「低」时的风险说明正文 |
    | `risk-none` | `#595959` | `"#595959"` | 风险等级为「无」时的风险等级文字 |
 
-   jsonml 实现方式：将一段文本拆为多个 `span(data-type:text) > span(data-type:leaf, color:xxx)` 节点，每个 leaf 的 `color` 对应上表色值。例如「缺陷总数 `<红>92</红>` 个，待解决 `<黄>4</黄>` 个」→ `["span",{"data-type":"text"},["span",{"data-type":"leaf"},"缺陷总数 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#ff4d4f"},"92"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，待解决 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#faad14"},"4"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个"]]`。
+   jsonml 实现方式：将一段文本拆为多个 `span(data-type:text) > span(data-type:leaf, color:xxx)` 节点，每个 leaf 的 `color` 对应上表色值。例如「缺陷总数 `<红>121</红>` 个，总共待解决 `<黄>4</黄>` 个，总共延期 `<红>2</红>` 个，当日新增缺陷数 `<绿>0</绿>` 个」→ `["span",{"data-type":"text"},["span",{"data-type":"leaf"},"缺陷总数 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#ff4d4f"},"121"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，总共待解决 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#faad14"},"4"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，总共延期 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#ff4d4f"},"2"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，当日新增缺陷数 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#52c41a"},"0"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个"]]`。
 3. **结构一致**：汇总中"具体详情请见下方图表"（当图表渲染为 PNG 时）vs 完整文字列表（当不渲染图表时）的判定逻辑必须在两种格式中保持一致。禁止 HTML 显示"具体详情请见下方图表"+ 图表而 jsonml 仍展示完整模块/开发者列表，或反之。
 4. **风险等级标识一致**：HTML 用 `<span class="risk-badge risk-<level>">` 渲染彩色圆点+文字，jsonml 用对应 emoji（⚪/🟢/🟡/🔴）+ 文字。
 
@@ -467,7 +467,7 @@ HTML 日报中「风险等级」单元格必须同时展示**彩色实心圆点*
 
    **数据颜色标识（强制）**：汇总中的关键数据必须根据状态使用不同颜色标注，**HTML 与钉钉 jsonml 两种格式都必须着色、且色值一致**：
    - **红色**：异常数据（未关闭高优先级缺陷 > 0、延期数 > 0 等）。HTML `<span class="metric-danger">`＝`#ff4d4f`，jsonml leaf `color:"#ff4d4f"`。
-   - **黄色**：数据偏高或需关注（待解决数超阈值等）。HTML `<span class="metric-warning">`＝`#faad14`，jsonml leaf `color:"#faad14"`。
+   - **黄色**：数据偏高或需关注（总共待解决数超阈值等）。HTML `<span class="metric-warning">`＝`#faad14`，jsonml leaf `color:"#faad14"`。
    - **绿色**：数据正常/进展顺利（无延期、执行进度百分比、已执行/总用例数等）。HTML `<span class="metric-success">`＝`#52c41a`，jsonml leaf `color:"#52c41a"`。
    
    着色粒度到单个数值而非整段文本：例如「缺陷总数 `<红>121</红>` 个，总共待解决 `<黄>4</黄>` 个，总共延期 `<红>2</红>` 个，当日新增缺陷数 `<绿>0</绿>` 个」中，"缺陷总数""个""总共待解决""个""总共延期""个""当日新增缺陷数""个"等文案不着色，仅数值部分着色。具体阈值由 `_METRIC_THRESHOLDS` 控制，`_metric_level()` 自动判定 danger/warning/success/none。
@@ -559,7 +559,7 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 - `_build_test_progress_text(data)`：按测试计划数量生成「测试进度」单元格文本；当存在 `test_progress_notes`（文档回退来源）时追加在进度后。
 - `_build_summary_cell(data)`：构建「汇总」单元格完整 HTML，负责：
   1. 使用 `<ol>` 有序列表组织汇总内容，每一点独占一行。
-  2. 聚合缺陷类型、业务模块、开发责任人分布，并对关键指标（缺陷总数、待解决、延期、未关闭高优先级等）按红/黄/绿规则着色。
+  2. 聚合缺陷类型、业务模块、开发责任人分布，并对关键指标（缺陷总数、总共待解决、总共延期、当日新增缺陷数、未关闭高优先级等）按红/黄/绿规则着色。
   3. 判定文字/图表分支（模块与开发者**各自独立**）：分别计算 `render_module = 缺陷总数 > 5 且 模块去重后 > 3`、`render_developer = 缺陷总数 > 5 且 开发责任人去重后 > 3`；某维度未满足时该项仍用文字描述，满足则列表项写「具体详情请见下方图表」并生成对应 Chart.js 柱状图。两维度不再共用同一开关，避免一方维度少而连坐掉另一方的图表。
   4. 调用 `_build_unclosed_defect_analysis()` 生成高优先级未关闭缺陷简约分析。
   5. 当 `test_duration_days > 5` 且缺陷总数 > 5 且存在每日数据时，生成每日缺陷走势折线图。
