@@ -59,8 +59,9 @@ def format_percent(value: float) -> str:
 
 def evaluate_risk(data: dict[str, Any], rules: list[dict[str, Any]]) -> dict[str, Any]:
     """
-    根据剩余天数与阈值评估风险等级，并返回未达标原因与阈值。
-    返回的 risk_level 为「信息/低/中/高」四档之一；
+    根据剩余天数与阈值评估风险等级，并返回未达标项的现状描述。
+    risk_reasons 仅阐述当前数据现状（如「执行率 62.5%」），不提及阈值对比。
+    返回的 risk_level 为「无/低/中/高」四档之一；
     若业务上需要「无」，由调用方根据策略覆盖为「无」。
     """
     days = data.get("days_until_release", 9999)
@@ -82,22 +83,13 @@ def evaluate_risk(data: dict[str, Any], rules: list[dict[str, Any]]) -> dict[str
 
     reasons: list[str] = []
     if execution_rate < window["execution_rate"]:
-        reasons.append(
-            f"执行率 {format_percent(execution_rate)} 低于阈值 "
-            f"{format_percent(window['execution_rate'])}"
-        )
+        reasons.append(f"执行率 {format_percent(execution_rate)}")
         score += 1
     if pass_rate < window["pass_rate"]:
-        reasons.append(
-            f"通过率 {format_percent(pass_rate)} 低于阈值 "
-            f"{format_percent(window['pass_rate'])}"
-        )
+        reasons.append(f"通过率 {format_percent(pass_rate)}")
         score += 1
     if unclosed_p0_p1 > window["unclosed_p0_p1"]:
-        reasons.append(
-            f"未关闭 P0/P1 缺陷 {unclosed_p0_p1} 个，超出阈值 "
-            f"{window['unclosed_p0_p1']} 个"
-        )
+        reasons.append(f"未关闭 P0/P1 缺陷 {unclosed_p0_p1} 个")
         score += 1
 
     score = min(score, 3)
@@ -660,25 +652,6 @@ def build_risk_description(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _build_risk_summary(data: dict[str, Any]) -> str:
-    """
-    项目进度中存在风险说明时，精简阐述风险事实（最多三点），不发表主观看法。
-    返回 HTML 字符串，风险原因使用与风险说明相同的颜色标识；无风险时返回空串。
-    """
-    reasons = data.get("risk_reasons", [])
-    risk_level = data.get("risk_level", "")
-    if risk_level == "无" or not reasons:
-        return ""
-    risk_class_map = {"高": "risk-high", "中": "risk-medium", "低": "risk-low"}
-    cls = risk_class_map.get(risk_level)
-    reasons = reasons[:3]
-
-    def _wrap(text: str) -> str:
-        return f'<span class="{cls}">{text}</span>' if cls else text
-
-    points = [_wrap(f"{i}. {r}。") for i, r in enumerate(reasons, 1)]
-    return f"<br>风险原因：{''.join(points)}"
-
 
 def _build_test_progress_text(data: dict[str, Any]) -> str:
     """按 SKILL.md 规范生成「测试进度」单元格文本；支持追加文档回退产生的 test_progress_notes。"""
@@ -709,9 +682,6 @@ def _build_test_progress_text(data: dict[str, Any]) -> str:
     else:
         result = "暂无测试计划数据"
 
-    risk_summary = _build_risk_summary(data)
-    if risk_summary:
-        result = f"{result}{risk_summary}"
     return result
 
 
@@ -1067,21 +1037,6 @@ def _j_progress_paragraphs(data: dict[str, Any]) -> list[list]:
         paragraphs.append(_j_para(_j_leaf(notes)))
     else:
         paragraphs.append(_j_para(_j_leaf("暂无测试计划数据")))
-
-    # 风险原因简述（最多三点，事实陈述，不着色）
-    risk_level = data.get("risk_level", "")
-    risk_reasons = data.get("risk_reasons", [])
-    if risk_level != "无" and risk_reasons:
-        risk_css_map = {"高": "risk-high", "中": "risk-medium", "低": "risk-low"}
-        risk_cls = risk_css_map.get(risk_level)
-        risk_color = _COLOR_MAP.get(risk_cls) if risk_cls else None
-        reasons = risk_reasons[:3]
-        reason_spans: list[list] = [_j_leaf("风险原因：")]
-        for i, reason in enumerate(reasons):
-            if i > 0:
-                pass  # 序号之间无需额外分隔
-            reason_spans.append(_j_leaf(f"{i + 1}. {reason}。", color=risk_color))
-        paragraphs.append(_j_para(*reason_spans))
 
     return paragraphs
 
