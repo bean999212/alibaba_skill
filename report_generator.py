@@ -81,15 +81,17 @@ def evaluate_risk(data: dict[str, Any], rules: list[dict[str, Any]]) -> dict[str
     base_level = window["base_level"]
     score = score_map.get(base_level, 0)
 
-    reasons: list[str] = []
+    reasons: list[str] = [
+        f"执行率 {format_percent(execution_rate)}",
+        f"通过率 {format_percent(pass_rate)}",
+        f"未关闭 P0/P1 缺陷 {unclosed_p0_p1} 个",
+    ]
+
     if execution_rate < window["execution_rate"]:
-        reasons.append(f"执行率 {format_percent(execution_rate)}")
         score += 1
     if pass_rate < window["pass_rate"]:
-        reasons.append(f"通过率 {format_percent(pass_rate)}")
         score += 1
     if unclosed_p0_p1 > window["unclosed_p0_p1"]:
-        reasons.append(f"未关闭 P0/P1 缺陷 {unclosed_p0_p1} 个")
         score += 1
 
     score = min(score, 3)
