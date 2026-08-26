@@ -340,6 +340,44 @@ def _colored_count_items(bugs: list[dict[str, Any]], key: str, default: str, lev
     return "，".join(parts)
 
 
+def _build_trend_analysis(daily_counts: list[tuple[str, int]]) -> str:
+    """
+    根据每日缺陷数量走势，生成一句简要的趋势分析。
+
+    判定逻辑：将数据按时间等分为前半段与后半段，分别计算日均新增量，
+    后半段日均比前半段高 30% 以上视为「上升趋势」，
+    低 30% 以上视为「收敛趋势」，其余视为「整体平稳」。
+    数据不足 2 天时返回空字符串。
+    """
+    if len(daily_counts) < 2:
+        return ""
+    counts = [c for _, c in daily_counts]
+    mid = len(counts) // 2
+    first_half = counts[:mid]
+    second_half = counts[mid:]
+    avg_first = sum(first_half) / len(first_half) if first_half else 0
+    avg_second = sum(second_half) / len(second_half) if second_half else 0
+    if avg_first <= 0:
+        if avg_second > 0:
+            return "缺陷走势呈上升趋势，近期新增明显增多"
+        return ""
+    ratio = avg_second / avg_first
+    if ratio >= 1.3:
+        return "缺陷走势呈上升趋势，近期新增持续增多"
+    elif ratio <= 0.7:
+        return "缺陷走势呈收敛趋势，近期新增逐步减少"
+    else:
+        return "缺陷走势整体平稳，每日新增波动不大"
+
+
+def _build_trend_suffix(daily_counts: list[tuple[str, int]]) -> str:
+    """将走势分析包装为可直接拼接到第 1 点末尾的后缀，无数据时返回空串。"""
+    analysis = _build_trend_analysis(daily_counts)
+    if analysis:
+        return f"，{analysis}"
+    return ""
+
+
 def _build_summary_cell(data: dict[str, Any]) -> str:
     """
     构建「■ 缺陷情况」→「汇总」单元格的完整 HTML 内容。
@@ -383,7 +421,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     unresolved_html = _metric_span(unresolved_count, _metric_level(unresolved_count, u_d, u_w))
     delayed_html = _metric_span(delayed_count, _metric_level(delayed_count, d_d, d_w))
     summary_lines = [
-        f"<li>缺陷总数 {total_html} 个，待解决 {unresolved_html} 个，延期 {delayed_html} 个</li>"
+        f"<li>缺陷总数 {total_html} 个，待解决 {unresolved_html} 个，延期 {delayed_html} 个{_build_trend_suffix(daily_counts)}</li>"
     ]
 
     # 第 2 点：缺陷类型分布
@@ -395,14 +433,14 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
         module_summary = _colored_count_items(all_bugs, "module", "未归类", "module")
         summary_lines.append(f"<li>业务模块分布：{module_summary}</li>")
     else:
-        summary_lines.append('<li>业务模块分布：见下方图表</li>')
+        summary_lines.append('<li>业务模块分布：具体详情请见下方图表</li>')
 
     # 第 4 点：开发责任人分布
     if not render_developer:
         dev_summary = _colored_count_items(all_bugs, "developer", "未分配", "developer")
         summary_lines.append(f"<li>开发责任人分布：{dev_summary}</li>")
     else:
-        summary_lines.append('<li>开发责任人分布：见下方图表</li>')
+        summary_lines.append('<li>开发责任人分布：具体详情请见下方图表</li>')
 
     # 第 5 点：未关闭缺陷分析
     summary_lines.append(f"<li>未关闭缺陷分析：{_build_unclosed_defect_analysis(all_bugs)}</li>")
@@ -513,7 +551,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
       layout: {{ padding: {{ top: 28 }} }},
       plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: function(ctx) {{ return ctx.parsed.y; }} }} }} }},
       scales: {{
-        x: {{ title: {{ display: true, text: '测试日期', font: {{ size: 12 }} }}, ticks: {{ font: {{ size: 11 }} }} }},
+        x: {{ title: {{ display: true, text: '每日新增bug数', font: {{ size: 12 }} }}, ticks: {{ font: {{ size: 11 }} }} }},
         y: {{ title: {{ display: true, text: 'bug数量', font: {{ size: 12 }} }}, ticks: {integer_ticks_js}, beginAtZero: true, suggestedMax: {_suggested_max(daily_counts)} }}
       }}
     }},
@@ -1031,7 +1069,7 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
         _j_leaf(str(unresolved_count), color=unresolved_color),
         _j_leaf(" 个，延期 "),
         _j_leaf(str(delayed_count), color=delayed_color),
-        _j_leaf(" 个"),
+        _j_leaf(f" 个{_build_trend_suffix(daily_counts)}"),
     ]
 
     # Line 2: 缺陷类型分布
@@ -1045,7 +1083,7 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
             all_bugs, "module", "未归类", "module"
         )
     else:
-        line3 = [_j_leaf("业务模块分布：见下方图表")]
+        line3 = [_j_leaf("业务模块分布：具体详情请见下方图表")]
 
     # Line 4: 开发责任人分布
     if not render_developer:
@@ -1053,7 +1091,7 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
             all_bugs, "developer", "未分配", "developer"
         )
     else:
-        line4 = [_j_leaf("开发责任人分布：见下方图表")]
+        line4 = [_j_leaf("开发责任人分布：具体详情请见下方图表")]
 
     # Line 5: 未关闭缺陷分析
     analysis = _build_unclosed_defect_analysis(all_bugs)
