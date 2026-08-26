@@ -660,6 +660,26 @@ def build_risk_description(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _build_risk_summary(data: dict[str, Any]) -> str:
+    """
+    项目进度中存在风险说明时，精简阐述风险事实（最多三点），不发表主观看法。
+    返回 HTML 字符串，风险原因使用与风险说明相同的颜色标识；无风险时返回空串。
+    """
+    reasons = data.get("risk_reasons", [])
+    risk_level = data.get("risk_level", "")
+    if risk_level == "无" or not reasons:
+        return ""
+    risk_class_map = {"高": "risk-high", "中": "risk-medium", "低": "risk-low"}
+    cls = risk_class_map.get(risk_level)
+    reasons = reasons[:3]
+
+    def _wrap(text: str) -> str:
+        return f'<span class="{cls}">{text}</span>' if cls else text
+
+    points = [_wrap(f"{i}. {r}。") for i, r in enumerate(reasons, 1)]
+    return f"<br>风险原因：{''.join(points)}"
+
+
 def _build_test_progress_text(data: dict[str, Any]) -> str:
     """按 SKILL.md 规范生成「测试进度」单元格文本；支持追加文档回退产生的 test_progress_notes。"""
     plans = data.get("test_plans", [])
@@ -681,12 +701,18 @@ def _build_test_progress_text(data: dict[str, Any]) -> str:
             base = f"测试执行进度：{rate_span}，失败用例：{failed}"
 
     if base and notes:
-        return f"{base}<br>文档补充：{notes}"
-    if base:
-        return base
-    if notes:
-        return f"数据来自文档：<br>{notes}"
-    return "暂无测试计划数据"
+        result = f"{base}<br>文档补充：{notes}"
+    elif base:
+        result = base
+    elif notes:
+        result = f"数据来自文档：<br>{notes}"
+    else:
+        result = "暂无测试计划数据"
+
+    risk_summary = _build_risk_summary(data)
+    if risk_summary:
+        result = f"{result}{risk_summary}"
+    return result
 
 
 def _build_issue_notes(data: dict[str, Any]) -> str:
@@ -1041,6 +1067,21 @@ def _j_progress_paragraphs(data: dict[str, Any]) -> list[list]:
         paragraphs.append(_j_para(_j_leaf(notes)))
     else:
         paragraphs.append(_j_para(_j_leaf("暂无测试计划数据")))
+
+    # 风险原因简述（最多三点，事实陈述，不着色）
+    risk_level = data.get("risk_level", "")
+    risk_reasons = data.get("risk_reasons", [])
+    if risk_level != "无" and risk_reasons:
+        risk_css_map = {"高": "risk-high", "中": "risk-medium", "低": "risk-low"}
+        risk_cls = risk_css_map.get(risk_level)
+        risk_color = _COLOR_MAP.get(risk_cls) if risk_cls else None
+        reasons = risk_reasons[:3]
+        reason_spans: list[list] = [_j_leaf("风险原因：")]
+        for i, reason in enumerate(reasons):
+            if i > 0:
+                pass  # 序号之间无需额外分隔
+            reason_spans.append(_j_leaf(f"{i + 1}. {reason}。", color=risk_color))
+        paragraphs.append(_j_para(*reason_spans))
 
     return paragraphs
 
