@@ -551,8 +551,8 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
       layout: {{ padding: {{ top: 28 }} }},
       plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: function(ctx) {{ return ctx.parsed.y; }} }} }} }},
       scales: {{
-        x: {{ title: {{ display: true, text: '每日新增bug数', font: {{ size: 12 }} }}, ticks: {{ font: {{ size: 11 }} }} }},
-        y: {{ title: {{ display: true, text: 'bug数量', font: {{ size: 12 }} }}, ticks: {integer_ticks_js}, beginAtZero: true, suggestedMax: {_suggested_max(daily_counts)} }}
+        x: {{ title: {{ display: true, text: '日期', font: {{ size: 12 }} }}, ticks: {{ font: {{ size: 11 }} }} }},
+        y: {{ title: {{ display: true, text: '每日新增bug数', font: {{ size: 12 }} }}, ticks: {integer_ticks_js}, beginAtZero: true, suggestedMax: {_suggested_max(daily_counts)} }}
       }}
     }},
     plugins: [dataLabelPlugin]
