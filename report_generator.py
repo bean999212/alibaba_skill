@@ -446,14 +446,14 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
         module_summary = _colored_count_items(all_bugs, "module", "未归类", "module")
         summary_lines.append(f"<li>业务模块分布：{module_summary}</li>")
     else:
-        summary_lines.append('<li>业务模块分布：具体详情请见下方图表</li>')
+        summary_lines.append('<li>业务模块分布：见下方图表</li>')
 
     # 第 4 点：开发责任人分布
     if not render_developer:
         dev_summary = _colored_count_items(all_bugs, "developer", "未分配", "developer")
         summary_lines.append(f"<li>开发责任人分布：{dev_summary}</li>")
     else:
-        summary_lines.append('<li>开发责任人分布：具体详情请见下方图表</li>')
+        summary_lines.append('<li>开发责任人分布：见下方图表</li>')
 
     # 第 5 点：未关闭缺陷分析
     summary_lines.append(f"<li>未关闭缺陷分析：{_build_unclosed_defect_analysis(all_bugs)}</li>")
@@ -1110,7 +1110,7 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
             all_bugs, "module", "未归类", "module"
         )
     else:
-        line3 = [_j_leaf("业务模块分布：具体详情请见下方图表")]
+        line3 = [_j_leaf("业务模块分布：见下方图表")]
 
     # Line 4: 开发责任人分布
     if not render_developer:
@@ -1118,7 +1118,7 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
             all_bugs, "developer", "未分配", "developer"
         )
     else:
-        line4 = [_j_leaf("开发责任人分布：具体详情请见下方图表")]
+        line4 = [_j_leaf("开发责任人分布：见下方图表")]
 
     # Line 5: 未关闭缺陷分析
     analysis = _build_unclosed_defect_analysis(all_bugs)
