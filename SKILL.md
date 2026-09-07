@@ -300,6 +300,7 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 
 - **HTML 文件**：基于 `report-template.html` 渲染生成的完整 HTML 日报，保存到 `outputs/` 目录，文件名建议包含项目名称与日期（如 `<project>_daily_report_<YYYY-MM-DD>.html`）。该文件用于离线查看、邮件附件或二次处理。
 - **钉钉文档**：将日报内容写入钉钉在线文档，便于团队协同、评论与分享。写入时**必须调用 `report_generator.py` 的 `generate_daily_report_jsonml(data)` 函数**生成 jsonml，再通过 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。**禁止手动拼接 jsonml 节点**——手动构建极易遗漏 `hidden: true` 占位 `tc`、`sr: true`、`colsWidth` 等钉钉表格必需属性，导致文档内容不渲染或被静默截断。
+- **HTML 日报截图（发群用）**：当日报需要发送到钉钉群时，使用 `assets/screenshot_report.js` 对 HTML 日报做全页高清截图，生成 PNG 图片后以图片消息形式发送到群聊，让群成员在聊天窗口直接预览完整日报，无需点开文件或文档。截图命令：`node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出png路径> --scale 3`。截图 PNG 保存到 `outputs/` 目录，文件名建议 `<project>_screenshot_<YYYY-MM-DD>.png`。
 
 两种格式的内容必须保持一致；钉钉文档创建/更新完成后，需向用户同时返回 HTML 文件路径和钉钉文档链接。
 
@@ -708,8 +709,14 @@ with open("report_jsonml.json", "w") as f:
 
 ### 10. 执行发送或创建定时任务
 
-- **立即发送**：调用 DWS 将报告内容发送到每一个选中的群。
-- **固定时间发送**：使用 QoderWork 定时任务创建一个每日循环的 cron 任务，每天在同一时间自动执行本流程并发送到已选群。
+**发送到钉钉群时，必须同时发送日报截图（图片消息）和钉钉文档链接（文字消息），共两条消息。** 截图让群成员在聊天窗口直接预览完整日报，文档链接供需要深入查看或评论的成员使用。
+
+- **立即发送**：按以下步骤对每个选中的群依次执行：
+  1. **截图**：`node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出png路径> --scale 3`，生成全页高清 PNG。
+  2. **上传图片**：调用 `dt_media_upload` 工具上传截图 PNG，获取返回的 URL；再用 `python ~/.qoderwork/skills/dws/scripts/extract_media_id.py "<URL>"` 提取 `mediaId`。
+  3. **发送图片消息**：`dws chat message send --group <openConversationId> --msg-type image --media-id <mediaId> --format json`。
+  4. **发送文档链接消息**：`dws chat message send --group <openConversationId> --title "<项目名称>测试日报" --text "钉钉文档：[点击查看](<钉钉文档URL>)" --format json`。
+- **固定时间发送**：使用 QoderWork 定时任务创建一个每日循环的 cron 任务，每天在同一时间自动执行本流程（拉数据 → 生成报告 → 截图 → 发图+链接）并发送到已选群。
 - **连续多日发送**：创建 N 个一次性定时任务（或在任务逻辑中维护剩余天数计数器），从开始日期起连续 N 天发送；到期后自动停止。
 
 发送失败时，保存 HTML 报告到 `outputs/` 目录并提示用户手动处理；若钉钉文档已生成，也需保留其链接。
