@@ -1,7 +1,7 @@
 ---
 name: aladdin-ione-daily-test-report
 description: 根据用户输入的需求名称或测试计划名称进行全局模糊匹配；若输入为纯数字 ID，则按 ID 模糊搜索阿拉丁与 ione 平台上的需求及阿拉丁测试计划。每次执行时必须基于用户本次输入重新搜索，禁止使用历史报告元数据、缓存文件或过往会话中保存的 ID 作为搜索入参。经用户确认后拉取用例测试执行进度与缺陷数据，结合项目发布时间评估测试风险；生成日报后通过 DWS 拉取钉钉群列表并让用户多选目标群，支持固定时间或连续多日的定时发送。Use when the user needs daily test progress reports, release risk assessment, requirement-based data retrieval, DingTalk group messaging, or integration of Aladdin and ione platform data.
-version: 1.3.0
+version: 1.4.0
 ---
 
 # 阿拉丁 + ione 每日测试风险日报
@@ -299,7 +299,7 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 生成报告时，必须同时产出并保留以下两种格式，最终一并提供给用户：
 
 - **HTML 文件**：基于 `report-template.html` 渲染生成的完整 HTML 日报，保存到 `outputs/` 目录，文件名建议包含项目名称与日期（如 `<project>_daily_report_<YYYY-MM-DD>.html`）。该文件用于离线查看、邮件附件或二次处理。
-- **钉钉文档**：将日报内容写入钉钉在线文档，便于团队协同、评论与分享。写入时**必须调用 `report_generator.py` 的 `generate_daily_report_jsonml(data)` 函数**生成 jsonml，再通过 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。**禁止手动拼接 jsonml 节点**——手动构建极易遗漏 `hidden: true` 占位 `tc`、`sr: true`、`colsWidth` 等钉钉表格必需属性，导致文档内容不渲染或被静默截断。
+- **钉钉文档**：将日报内容写入钉钉在线文档，便于团队协同、评论与分享。写入时**必须调用 `report_generator.py` 的 `generate_daily_report_jsonml(data)` 函数**生成 jsonml，再通过 `dws doc create/update --content-format jsonml --no-fix-jsonml` 写入。**禁止手动拼接 jsonml 节点**——手动构建极易遗漏 `hidden: true` 占位 `tc`、`sr: true`、`colsWidth` 等钉钉表格必需属性，导致文档内容不渲染或被静默截断。
 - **HTML 日报截图（发群用）**：当日报需要发送到钉钉群时，使用 `assets/screenshot_report.js` 对 HTML 日报做全页高清截图，生成 PNG 图片后以图片消息形式发送到群聊，让群成员在聊天窗口直接预览完整日报，无需点开文件或文档。截图命令：`node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出png路径> --scale 3`。截图 PNG 保存到 `outputs/` 目录，文件名建议 `<project>_screenshot_<YYYY-MM-DD>.png`。
 
 两种格式的内容必须保持一致；钉钉文档创建/更新完成后，需向用户同时返回 HTML 文件路径和钉钉文档链接。
@@ -328,9 +328,20 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 
 **不包含「今日进展」模块（强制）**：日报不再输出「今日进展」这一行。无论 HTML 还是钉钉文档，「■ 整体概述」分区都只包含风险等级、风险说明/进度简述、测试进度 3 行，其后直接进入「■ 缺陷情况」横幅。禁止再新增或保留「今日进展」标签行与其值单元格。
 
-写入钉钉文档时，**必须调用 `generate_daily_report_jsonml(data)` 获取 jsonml 列表**，再用 `json.dump` 序列化为 JSON 字符串后通过 `--content-file` 传入 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。该函数内部已将 HTML 模板的结构等价转换为钉钉 jsonml 表格（5 列列宽 `colsWidth: [150, 170, 227, 227, 227]`、rowSpan/colSpan 合并、`hidden: true` 占位 `tc`、蓝色横幅 `fill: rgba(0, 96, 255, 0.98)` + 白色加粗文字 + **文字左对齐**——横幅 `p` 节点**不得设 `jc`**，保持默认左对齐）。**禁止绕过该函数手动拼接 jsonml 节点。**
+写入钉钉文档时，**必须调用 `generate_daily_report_jsonml(data)` 获取 jsonml 列表**，再用 `json.dump` 序列化为 JSON 字符串后通过 `--content-file` 传入 `dws doc create/update --content-format jsonml --no-fix-jsonml` 写入。该函数内部已将 HTML 模板的结构等价转换为钉钉 jsonml 表格（5 列列宽 `colsWidth: [150, 170, 227, 227, 227]`、rowSpan/colSpan 合并、`hidden: true` 占位 `tc`、蓝色横幅 `fill: rgba(0, 96, 255, 0.98)` + 白色加粗文字 + **文字左对齐**——横幅 `p` 节点**不得设 `jc`**，保持默认左对齐）。**禁止绕过该函数手动拼接 jsonml 节点。**
 
-**jsonml 表格内禁止使用 `a` 标签（强制）**：钉钉文档的表格规范化（`--fix-jsonml`）不允许 `tc` 单元格内出现 `a`（超链接）标签。一旦表格内含有 `a` 节点，规范化会将该 `tr` 及**其后所有 `tr` 行一并丢弃**，导致文档从缺陷行起被静默截断——「later」「问题记录」「变更卡点」等后续分区全部丢失，且创建命令仍返回 `success: true`，仅有一条 `tag "a" not in parent's allowed_children` warning，极易被忽略。**替代写法**：在 jsonml 表格中，将 HTML 的 `<a href="...">缺陷标题</a> ｜ @花名` 替换为纯文本 `缺陷标题（bug/<bugId>） ｜ @花名`，仅保留缺陷 ID 供检索。HTML 版本仍然使用 `<a>` 超链接不受影响。
+**jsonml 表格中 `a` 标签的使用规范（强制）**：使用 `--no-fix-jsonml` 写入时，`a` 标签可以正常保留在 `tc` 单元格内，缺陷标题应以超链接形式展示。**`a` 标签的结构约束**：① `a` 必须是 `p` 的直接子节点，**禁止嵌套在 `span` 内部**（否则被丢弃）；② `a` 的内容必须使用完整的 `span[data-type=text] > span[data-type=leaf] > text` 三层嵌套，**禁止纯文本或单独的 leaf span** 作为 `a` 的子节点（服务端 `jsonMLToNode` 会拒绝）。正确写法：
+
+```json
+["p", {},
+  ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, "1. "]],
+  ["a", {"href": "https://aone.alibaba-inc.com/v2/project/2083180/bug/85943354"},
+    ["span", {"data-type": "text"},
+      ["span", {"data-type": "leaf"}, "缺陷标题（bug/85943354）"]]],
+  ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, " ｜ @花名"]]]
+```
+
+**禁止的写法**（会导致 `a` 节点被丢弃）：`["a", {"href": "..."}, "纯文本"]`（bare text）、`["a", {"href": "..."}, ["span", {"data-type": "leaf"}, "leaf"]]`（无 text 层）、`["span", {"data-type": "text"}, ["a", ...]]`（a 嵌套在 span 内）。`--fix-jsonml` 模式下 `a` 标签会被静默丢弃并截断后续行，因此**必须使用 `--no-fix-jsonml`**。HTML 版本仍然使用标准 `<a>` 超链接不受影响。
 
 样式映射补充：模板中需要居中的单元格在 jsonml 中通过「`tc` 设 `vAlign: "middle"`（垂直居中）+ 其内 `p` 设 `jc: "center"`（水平居中）」实现。具体包括 `.label-center` 标签单元格（“项目进度”“汇总”“new”“later”），以及 `.cell-center` 单元格——即「■ 整体概述」中「风险等级」「风险说明 / 进度简述」「测试进度」这 3 个**左侧标签格**。其余普通 `.label` 与正文单元格（含上述三行右侧的值单元格）保持 `vAlign: "top"`、`p` 不设 `jc`（默认左对齐）即可。
 
@@ -648,7 +659,7 @@ jsonml = generate_daily_report_jsonml(data)
 # 3. 写入文件后通过 dws 上传
 with open("report_jsonml.json", "w") as f:
     json.dump(jsonml, f, ensure_ascii=False)
-# dws doc update --node <nodeId> --content-format jsonml --fix-jsonml --content-file report_jsonml.json
+# dws doc update --node <nodeId> --content-format jsonml --no-fix-jsonml --content-file report_jsonml.json
 ```
 
 ##### 图表渲染与数据约定
@@ -667,11 +678,15 @@ with open("report_jsonml.json", "w") as f:
 1. **缺陷标题必须是可点击的超链接**（仅 HTML 版本），指向该缺陷在 Aone 的详情页，URL 形如 `https://aone.alibaba-inc.com/v2/project/<projectId>/bug/<bugId>`。不要只贴纯文本标题。
 2. **负责人花名后面不要附带缺陷编号**。每条缺陷格式为「序号. [缺陷标题](链接)  ｜ @负责人花名」，即以 `｜ @花名` 结尾，不要再加 `（#缺陷号）` 之类的 ID 后缀。
 
-**钉钉文档（jsonml 表格）中缺陷标题的写法（强制）**：jsonml 表格的 `tc` 单元格内**禁止使用 `a` 标签**（详见上方「jsonml 表格内禁止使用 `a` 标签」规则），否则会导致该 `tr` 及后续所有行被静默丢弃。缺陷行改为纯文本格式，在标题末尾附加 `（bug/<bugId>）` 供检索：
+**钉钉文档（jsonml 表格）中缺陷标题的写法（强制）**：jsonml 表格中缺陷标题**必须使用 `a` 标签超链接**（配合 `--no-fix-jsonml` 写入），`a` 作为 `p` 的直接子节点，内部嵌套 `span[data-type=text] > span[data-type=leaf]`。序号和「｜ @花名」仍用普通 `span`：
 
 ```json
-["span", {"data-type": "text"},
-  ["span", {"data-type": "leaf"}, "1. 【集运pc版】首登无session，没有默选待入仓已集运包裹最多的站点（bug/86442288） ｜ @音十"]]
+["p", {},
+  ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, "1. "]],
+  ["a", {"href": "https://aone.alibaba-inc.com/v2/project/2083180/bug/86442288"},
+    ["span", {"data-type": "text"},
+      ["span", {"data-type": "leaf"}, "【集运pc版】首登无session（bug/86442288）"]]],
+  ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, " ｜ @音十"]]]
 ```
 
 ### 7. 拉取钉钉群列表

@@ -880,16 +880,21 @@ def _j_para(*spans: list, list_attrs: dict | None = None, jc: str | None = None)
 
 
 def _j_bug_text(title: str, url: str) -> list:
-    """Plain-text bug title with bug ID for jsonml table cells.
+    """Clickable bug title with hyperlink for jsonml table cells.
 
-    DingTalk jsonml table normalization forbids ``a`` tags inside ``tc``;
-    using one causes the offending ``tr`` **and all subsequent rows** to be
-    silently dropped.  We therefore render bug titles as plain text with the
-    bug ID appended in parentheses, e.g. "缺陷标题（bug/86442288）".
+    DingTalk jsonml ``a`` tags must be direct children of ``p`` (not nested
+    inside ``span``), and their content must use the full
+    ``span[data-type=text] > span[data-type=leaf] > text`` nesting.
+    Bare text or a lone ``leaf`` span inside ``a`` is rejected by the
+    server-side ``jsonMLToNode`` validator.
     """
     # Extract bug ID from URL like .../bug/86442288
     bug_id = url.rsplit("/bug/", 1)[-1].rstrip("/") if "/bug/" in url else ""
     display = f"{title}（bug/{bug_id}）" if bug_id else title
+    if url:
+        return ["a", {"href": url},
+                ["span", {"data-type": "text"},
+                 ["span", {"data-type": "leaf"}, display]]]
     return _j_leaf(display)
 
 
