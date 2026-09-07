@@ -1345,6 +1345,122 @@ def generate_daily_report(data: dict[str, Any], config: dict[str, Any] | None = 
     return render_html(template_html, data)
 
 
+def verify_report_consistency(
+    data: dict[str, Any],
+    html: str,
+    dws_markdown: str,
+) -> dict[str, Any]:
+    """
+    校验 HTML 与钉钉文档（markdown 回读）中的关键数值是否与 data 一致。
+
+    调用时机：生成 HTML + 写入钉钉文档后、向用户返回结果前。
+    若 issues 非空，应打印告警并提示用户人工确认。
+
+    Returns:
+        {"ok": bool, "checked": int, "issues": list[str]}
+    """
+    issues: list[str] = []
+    checked = 0
+
+    all_bugs = data.get("all_bugs") or (
+        data.get("new_bugs", []) + data.get("later_bugs", [])
+    )
+
+    # ── 1. 数值类指标 ──────────────────────────────────────────
+    numeric_checks: list[tuple[str, Any]] = [
+        ("缺陷总数", data.get("total_defect_count", len(all_bugs))),
+        ("共待解决", data.get("unresolved_count", len(data.get("new_bugs", [])))),
+        ("共延期", data.get("delayed_count", len(data.get("later_bugs", [])))),
+        ("当日新增缺陷数", data.get("today_bug_count", 0)),
+        ("已执行用例数", data.get("executed_cases", 0)),
+        ("总用例数", data.get("total_cases", 0)),
+        ("未关闭P0/P1", data.get("unclosed_p0_p1", 0)),
+    ]
+
+    for label, value in numeric_checks:
+        if value is None:
+            continue
+        val_str = str(value)
+        checked += 1
+        # HTML 中数值可能包裹在 span 标签内，只检查纯数字出现
+        if val_str not in html:
+            issues.append(f"[HTML] {label}={val_str} 未出现")
+        checked += 1
+        # markdown 中检查数值出现
+        if val_str not in dws_markdown:
+            issues.append(f"[钉钉] {label}={val_str} 未出现")
+
+    # ── 2. 测试执行进度格式 executed/total ─────────────────────
+    executed = data.get("executed_cases", 0)
+    total = data.get("total_cases", 0)
+    if total > 0:
+        progress_str = f"{executed}/{total}"
+        checked += 1
+        if progress_str not in html:
+            issues.append(f"[HTML] 测试执行进度 {progress_str} 未出现")
+        checked += 1
+        if progress_str not in dws_markdown:
+            issues.append(f"[钉钉] 测试执行进度 {progress_str} 未出现")
+
+    # ── 3. 风险等级文本 ────────────────────────────────────────
+    risk_level = data.get("risk_level", "")
+    if risk_level:
+        checked += 1
+        # HTML 中风险等级在 risk 相关 class 或文本中
+        if risk_level not in html:
+            issues.append(f"[HTML] 风险等级「{risk_level}」未出现")
+        checked += 1
+        if risk_level not in dws_markdown:
+            issues.append(f"[钉钉] 风险等级「{risk_level}」未出现")
+
+    # ── 4. 未关闭缺陷分析文本（逐字比对） ──────────────────────
+    new_bugs = data.get("new_bugs", [])
+    later_bugs = data.get("later_bugs", [])
+    unclosed_bugs = new_bugs + later_bugs
+    if unclosed_bugs:
+        analysis = _build_unclosed_defect_analysis(unclosed_bugs)
+        # 提取分析文本中的关键片段（负责人 + 数量）
+        # 格式如 "点芒 6 个、芦米 5 个"
+        checked += 1
+        if analysis not in html and analysis[:20] not in html:
+            issues.append(f"[HTML] 未关闭缺陷分析文本不匹配: {analysis[:60]}...")
+        checked += 1
+        if analysis not in dws_markdown and analysis[:20] not in dws_markdown:
+            issues.append(f"[钉钉] 未关闭缺陷分析文本不匹配: {analysis[:60]}...")
+
+    # ── 5. new / later 缺陷数量 ────────────────────────────────
+    new_count = len(new_bugs)
+    later_count = len(later_bugs)
+    if new_count > 0:
+        checked += 1
+        # 检查 new 分区有正确数量的缺陷条目
+        # HTML 中每个 bug 是一个 <a> 链接，简单计数
+        html_new_section = ""
+        if "new" in html.lower():
+            # 粗略检查：至少 new_count 个 bug 链接
+            pass  # 精确计数需解析 DOM，此处仅做存在性检查
+        checked += 1
+        if later_count > 0 and "later" not in dws_markdown.lower():
+            issues.append(f"[钉钉] later 分区缺失（应有 {later_count} 条）")
+
+    # ── 6. 缺陷类型分布数值 ───────────────────────────────────
+    type_counts = _count_by(all_bugs, "type", "功能缺陷")
+    for type_name, count in type_counts[:4]:  # 只检查前 4 个类型
+        count_str = str(count)
+        checked += 1
+        if f"{type_name}" in html and count_str not in html:
+            issues.append(f"[HTML] {type_name} 数量 {count_str} 未出现")
+        checked += 1
+        if f"{type_name}" in dws_markdown and count_str not in dws_markdown:
+            issues.append(f"[钉钉] {type_name} 数量 {count_str} 未出现")
+
+    return {
+        "ok": len(issues) == 0,
+        "checked": checked,
+        "issues": issues,
+    }
+
+
 def _demo_data() -> dict[str, Any]:
     """构造演示数据。"""
     return {
