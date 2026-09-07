@@ -449,8 +449,9 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     else:
         summary_lines.append('<li>开发责任人分布：见下方图表</li>')
 
-    # 第 5 点：未关闭缺陷分析
-    summary_lines.append(f"<li>未关闭缺陷分析：{_build_unclosed_defect_analysis(all_bugs)}</li>")
+    # 第 5 点：未关闭缺陷分析（仅分析 New + Later 状态的缺陷，不含全量）
+    unclosed_bugs = new_bugs + later_bugs
+    summary_lines.append(f"<li>未关闭缺陷分析：{_build_unclosed_defect_analysis(unclosed_bugs)}</li>")
 
     parts = [f'<ol class="summary-list">{ "".join(summary_lines) }</ol>']
 
@@ -585,7 +586,7 @@ def build_progress_brief(data: dict[str, Any]) -> str:
     包含：测试进度百分比、缺陷总数、执行内容分析、总结简述。
     """
     exec_rate = data.get("execution_rate", 0.0) * 100
-    total_defects = data.get("total_defects", 0)
+    total_defects = data.get("total_defect_count", data.get("total_defects", 0))
     executed_cases = data.get("executed_cases", 0)
     total_cases = data.get("total_cases", 0)
     failed_cases = data.get("failed_cases", 0)
@@ -928,7 +929,7 @@ def _j_colored_count_items(
 def _j_brief_paragraphs(data: dict[str, Any]) -> list[list]:
     """Progress brief paragraphs in jsonml (same logic as build_progress_brief)."""
     exec_rate = data.get("execution_rate", 0.0) * 100
-    total_defects = data.get("total_defects", 0)
+    total_defects = data.get("total_defect_count", data.get("total_defects", 0))
     executed_cases = data.get("executed_cases", 0)
     total_cases = data.get("total_cases", 0)
     failed_cases = data.get("failed_cases", 0)
@@ -1127,8 +1128,9 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
     else:
         line4 = [_j_leaf("开发责任人分布：见下方图表")]
 
-    # Line 5: 未关闭缺陷分析
-    analysis = _build_unclosed_defect_analysis(all_bugs)
+    # Line 5: 未关闭缺陷分析（仅分析 New + Later 状态的缺陷，不含全量）
+    unclosed_bugs = new_bugs + later_bugs
+    analysis = _build_unclosed_defect_analysis(unclosed_bugs)
     line5: list[list] = [_j_leaf(f"未关闭缺陷分析：{analysis}")]
 
     # Build ordered list paragraphs
