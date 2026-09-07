@@ -595,7 +595,7 @@ def build_progress_brief(data: dict[str, Any]) -> str:
 
     # 测试执行进度标绿色（metric-success）；缺陷总数仅在此处描述一次，后续不再重复
     lines = [
-        f'测试执行进度：<span class="metric-success">{exec_rate:.1f}%</span>，缺陷总数：{total_defects}'
+        f'测试执行进度：<span class="metric-success">{executed_cases}/{total_cases}</span>，缺陷总数：{total_defects}'
     ]
 
     # 共执行用例数标绿色（metric-success）
@@ -673,7 +673,7 @@ def _build_test_progress_text(data: dict[str, Any]) -> str:
             base = ""
         else:
             rate = executed / total * 100
-            rate_span = f'<span class="metric-success">{rate:.1f}%</span>'
+            rate_span = f'<span class="metric-success">{executed}/{total}</span>'
             base = f"测试执行进度：{rate_span}，失败用例：{failed}"
 
     if base and notes:
@@ -945,7 +945,7 @@ def _j_brief_paragraphs(data: dict[str, Any]) -> list[list]:
     # Line 1
     line1: list[list] = [
         _j_leaf("测试执行进度："),
-        _j_leaf(f"{exec_rate:.1f}%", color=green),
+        _j_leaf(f"{executed_cases}/{total_cases}", color=green),
         _j_leaf(f"，缺陷总数：{total_defects}"),
     ]
 
@@ -1040,7 +1040,7 @@ def _j_progress_paragraphs(data: dict[str, Any]) -> list[list]:
             rate = executed / total * 100
             base_spans = [
                 _j_leaf("测试执行进度："),
-                _j_leaf(f"{rate:.1f}%", color=green),
+                _j_leaf(f"{executed}/{total}", color=green),
                 _j_leaf(f"，失败用例：{failed}"),
             ]
 
