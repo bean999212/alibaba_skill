@@ -19,7 +19,7 @@ version: 1.4.0
 7. 根据确认后的一个或多个 Aone 项目拉取缺陷数据并合并统计。
 8. 根据项目发布时间与测试完成度自动评估风险。
 9. 生成测试日报。日报必须同时产出两种格式：
-   - **HTML 格式**：保留为本地文件（默认位于 `outputs/`），便于离线查看、邮件附件或后续二次处理。
+   - **HTML 格式**：保留为本地文件（默认位于 `outputs/`），同时上传至钉钉云盘生成可点击链接，用户点击即可在浏览器中查看完整日报。
    - **钉钉文档格式**：通过 DWS 创建/更新为在线钉钉文档，便于团队协同、评论与分享。
    两种格式最终都要提供给用户，由用户按需选择使用。
 10. 拉取用户钉钉群列表（如未授权则引导授权）。
@@ -298,11 +298,11 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 
 生成报告时，必须同时产出并保留以下两种格式，最终一并提供给用户：
 
-- **HTML 文件**：基于 `report-template.html` 渲染生成的完整 HTML 日报，保存到 `outputs/` 目录，文件名建议包含项目名称与日期（如 `<project>_daily_report_<YYYY-MM-DD>.html`）。该文件用于离线查看、邮件附件或二次处理。
+- **HTML 文件**：基于 `report-template.html` 渲染生成的完整 HTML 日报，保存到 `outputs/` 目录，文件名建议包含项目名称与日期（如 `<project>_daily_report_<YYYY-MM-DD>.html`）。保存后**立即上传至钉钉云盘**：`dws drive upload --file <本地HTML路径> --file-name <显示文件名>.html --yes`，从返回结果中提取 `docUrl` 作为可在浏览器中直接查看的日报链接。该链接与钉钉文档链接一并返回给用户。
 - **钉钉文档**：将日报内容写入钉钉在线文档，便于团队协同、评论与分享。写入时**必须调用 `report_generator.py` 的 `generate_daily_report_jsonml(data)` 函数**生成 jsonml，再通过 `dws doc create/update --content-format jsonml --no-fix-jsonml` 写入。**禁止手动拼接 jsonml 节点**——手动构建极易遗漏 `hidden: true` 占位 `tc`、`sr: true`、`colsWidth` 等钉钉表格必需属性，导致文档内容不渲染或被静默截断。
 - **HTML 日报截图（发群用）**：当日报需要发送到钉钉群时，使用 `assets/screenshot_report.js` 对 HTML 日报做全页高清截图，生成 PNG 图片后以图片消息形式发送到群聊，让群成员在聊天窗口直接预览完整日报，无需点开文件或文档。截图命令：`node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出png路径> --scale 3`。截图 PNG 保存到 `outputs/` 目录，文件名建议 `<project>_screenshot_<YYYY-MM-DD>.png`。
 
-两种格式的内容必须保持一致；钉钉文档创建/更新完成后，需向用户同时返回 HTML 文件路径和钉钉文档链接。
+两种格式的内容必须保持一致；钉钉文档创建/更新完成后，需向用户同时返回 **HTML 云盘链接**（`dws drive upload` 返回的 `docUrl`，点击可在浏览器中查看完整日报）和**钉钉文档链接**。
 
 **HTML ↔ 钉钉 jsonml 严格一致（强制）**：钉钉文档 jsonml 必须与 HTML 日报在以下维度**逐字对应**，禁止因分别构建而导致内容/样式偏差：
 
