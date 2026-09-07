@@ -1,7 +1,7 @@
 ---
 name: aladdin-ione-daily-test-report
 description: 根据用户输入的需求名称或测试计划名称进行全局模糊匹配；若输入为纯数字 ID，则按 ID 模糊搜索阿拉丁与 ione 平台上的需求及阿拉丁测试计划。每次执行时必须基于用户本次输入重新搜索，禁止使用历史报告元数据、缓存文件或过往会话中保存的 ID 作为搜索入参。经用户确认后拉取用例测试执行进度与缺陷数据，结合项目发布时间评估测试风险；生成日报后通过 DWS 拉取钉钉群列表并让用户多选目标群，支持固定时间或连续多日的定时发送。Use when the user needs daily test progress reports, release risk assessment, requirement-based data retrieval, DingTalk group messaging, or integration of Aladdin and ione platform data.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # 阿拉丁 + ione 每日测试风险日报
