@@ -584,7 +584,7 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 ##### 核心函数职责
 
 - `evaluate_risk(data, rules)`：根据剩余天数、执行率、通过率、未关闭 P0/P1 数量评估风险等级，返回等级与未达标项的现状描述（如「执行率 45.0%」，不提及阈值对比）。
-- `build_progress_brief(data)`：风险等级为「无」时生成「进度简述」，包含测试进度百分比、缺陷总数、执行内容分析、总结简述，每点独立成行。
+- `build_progress_brief(data)`：风险等级为「无」时生成「进度简述」，包含测试进度百分比、缺陷总数（读取 `data["total_defect_count"]`，**禁止读 `total_defects`**）、执行内容分析、总结简述，每点独立成行。
 - `build_risk_description(data)`：风险等级不为「无」时生成「风险说明」，按有序序号列出风险因素与当前数据现状（仅阐述事实，不提及阈值对比），每点结束后换行，不给出主观行动建议。
 - `_content_to_ol_html(content)`：将「进度简述 / 风险说明」的多点内容渲染为 HTML 有序列表 `<ol class="progress-list">`，每点一个 `<li>` 由 `<ol>` 自动编号；会去除各行可能已有的行首序号（如 `1.`、`2、`）避免重复编号。`render_html` 用它填充 `{风险说明内容}` 占位符。
 - `_build_test_progress_text(data)`：按测试计划数量生成「测试进度」单元格文本；当存在 `test_progress_notes`（文档回退来源）时追加在进度后。
@@ -592,10 +592,10 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
   1. 使用 `<ol>` 有序列表组织汇总内容，每一点独占一行。
   2. 聚合缺陷类型、业务模块、开发责任人分布，并对关键指标（缺陷总数、共待解决、共延期、当日新增缺陷数、未关闭高优先级等）按红/黄/绿规则着色。
   3. 判定文字/图表分支（模块与开发者**各自独立**）：分别计算 `render_module = 缺陷总数 > 5 且 模块去重后 > 3`、`render_developer = 缺陷总数 > 5 且 开发责任人去重后 > 3`；某维度未满足时该项仍用文字描述，满足则列表项写「见下方图表」并生成对应 Chart.js 柱状图。两维度不再共用同一开关，避免一方维度少而连坐掉另一方的图表。
-  4. 调用 `_build_unclosed_defect_analysis()` 生成高优先级未关闭缺陷简约分析。
+  4. 调用 `_build_unclosed_defect_analysis(new_bugs + later_bugs)` 生成未关闭缺陷简约分析。**禁止传入 `all_bugs`**——未关闭缺陷分析的负责人分布必须只统计 New + Later 状态的缺陷，不能用全量缺陷数据。
   5. 当 `test_duration_days > 5` 且缺陷总数 > 5 且存在每日数据时，生成每日缺陷走势折线图。
   6. 将需要渲染的图表按固定顺序放在单元格最底部：业务模块分布 → 开发责任人分布 → 每日缺陷走势；图表必须显示数值标签。
-- `_build_unclosed_defect_analysis(bugs)`：聚焦高优先级（P0/P1/严重/高优先级/高）未关闭缺陷，按模块聚合并最多提及前两名负责人，返回一段自然语言总结。
+- `_build_unclosed_defect_analysis(bugs)`：聚焦高优先级（P0/P1/严重/高优先级/高）未关闭缺陷，按模块聚合并最多提及前两名负责人，返回一段自然语言总结。**`bugs` 参数必须是 `new_bugs + later_bugs`（仅 New + Later 状态的未关闭缺陷），禁止传入全量缺陷集 `all_bugs`**，否则负责人分布会错误地反映全量缺陷而非未关闭缺陷的分布。
 - `_build_bug_list(bugs, default_project_id)`：生成 `<li>` 列表，标题自动拼接为 Aone 缺陷详情页超链接，格式为 `序号. <a href="...">标题</a> ｜ @owner`；多项目场景下优先使用每条缺陷自身的 `aone_project_id` 拼接链接，缺失时才回退到 `default_project_id`。
 - `_build_issue_notes(data)`：构建「■ 问题记录」分区内容。优先级为：已提供的 `group_chat_notes` / `issue_notes` → 失败用例聚类摘要 → 返回「无」。失败用例优先从 `failed_cases_detail` 明细按模块/计划聚类，无明细时从 `test_plans` 的 `failed` 字段汇总，均无失败时直接返回「无」。
 - `_build_change_notes(data)`：构建「■ 变更卡点」分区内容（格式与「问题记录」一致）。从当天群消息中按关键字筛选：「变更」匹配变更类、「卡」「堵住」「阻塞」匹配卡点类。优先级为：已提供的 `change_notes` / `group_chat_changes` → 返回「无」。该分区不使用失败用例做降级；无内容时直接显示「无」。

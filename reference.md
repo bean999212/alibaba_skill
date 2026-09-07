@@ -384,7 +384,7 @@ pass_rate = passed_cases / executed_cases
 
 | 聚合项 | 本 Skill 内部字段 | 说明 |
 |----------|-----------------|------|
-| 缺陷总数 | `total_defects` | 项目全量缺陷数（须查全状态：New/Later/Fixed/Closed/Invalid），不能只查未关闭状态 |
+| 缺陷总数 | `total_defect_count` | 项目全量缺陷数（须查全状态：New/Later/Fixed/Closed/Invalid），不能只查未关闭状态。`report_generator.py` 中 `build_progress_brief` 和 `_build_summary_cell` 均读取此字段 |
 | P0 数量 | `p0_defects` | P0 缺陷数 |
 | P1 数量 | `p1_defects` | P1 缺陷数 |
 | P2 数量 | `p2_defects` | P2 缺陷数 |
@@ -453,7 +453,7 @@ aladdin:            # 多计划汇总结果
   execution_rate: 0.75
   pass_rate: 0.9444
 ione:               # 多项目合并去重后的缺陷统计
-  total_defects: 58
+  total_defect_count: 58
   p0_defects: 2
   p1_defects: 5
   p2_defects: 18
@@ -579,7 +579,7 @@ HTML 模板在「■ 缺陷情况」表格下方通过 Chart.js 按条件渲染�
 
 **HTML ↔ 钉钉 jsonml 严格一致（强制）**：钉钉文档 jsonml 不仅结构要与 HTML 等价，**文本内容和颜色标识也必须逐字对应**，禁止因分别构建而产生偏差：
 
-1. **文本内容一致**：每个单元格的文案（缺陷统计数值、分析结论、进度简述措辞、未关闭缺陷分析文本等）在两种格式中必须完全相同。禁止 HTML 与 jsonml 使用不同代码路径生成文本（例如 HTML 调用 `_build_unclosed_defect_analysis(all_bugs)` 而 jsonml 用另一段逻辑只分析 `new_bugs + later_bugs`）。正确做法：**先生成 HTML（调用 `report_generator.py` 的 `render_html`），再从 HTML 渲染结果中提取每段文本用于构建 jsonml**，确保文字一字不差。
+1. **文本内容一致**：每个单元格的文案（缺陷统计数值、分析结论、进度简述措辞、未关闭缺陷分析文本等）在两种格式中必须完全相同。禁止 HTML 与 jsonml 使用不同代码路径生成文本（例如 HTML 调用 `_build_unclosed_defect_analysis(all_bugs)` 而 jsonml 调用 `_build_unclosed_defect_analysis(new_bugs + later_bugs)`，两者输入不同导致结论不同）。**两种格式的未关闭缺陷分析都必须且只能传入 `new_bugs + later_bugs`**。正确做法：**先生成 HTML（调用 `report_generator.py` 的 `render_html`），再从 HTML 渲染结果中提取每段文本用于构建 jsonml**，确保文字一字不差。
 2. **颜色标识一致**：HTML 中通过 CSS class 着色的数值/文本，jsonml 中必须通过 leaf `color` 属性设为等价色值：
 
    | HTML CSS class | 色值 | jsonml leaf `color` | 场景 |
