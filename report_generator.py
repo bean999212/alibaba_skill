@@ -378,7 +378,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     构建「■ 缺陷情况」→「汇总」单元格的完整 HTML 内容。
 
     内容采用有序列表，每点独占一行：
-    1. 缺陷总数 / 总共待解决 / 总共延期 / 当日新增缺陷数（关键数值按状态着色）
+    1. 缺陷总数 / 共待解决 / 共延期 / 当日新增缺陷数（关键数值按状态着色）
     2. 缺陷类型分布（文字，数字着色）
     3. 业务模块分布（数据少用文字+着色，数据多→见下方图表）
     4. 开发责任人分布（数据少用文字+着色，数据多→见下方图表）
@@ -418,7 +418,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     daily_counts = _parse_daily_bug_counts(data) if render_trend else []
     render_trend = render_trend and bool(daily_counts)
 
-    # 第 1 点：缺陷总数 / 总共待解决 / 总共延期 / 当日新增缺陷数，数值着色
+    # 第 1 点：缺陷总数 / 共待解决 / 共延期 / 当日新增缺陷数，数值着色
     t_d, t_w = _METRIC_THRESHOLDS["total"]
     u_d, u_w = _METRIC_THRESHOLDS["unresolved"]
     d_d, d_w = _METRIC_THRESHOLDS["delayed"]
@@ -428,7 +428,7 @@ def _build_summary_cell(data: dict[str, Any]) -> str:
     delayed_html = _metric_span(delayed_count, _metric_level(delayed_count, d_d, d_w))
     today_html = _metric_span(today_bug_count, _metric_level(today_bug_count, td_d, td_w))
     summary_lines = [
-        f"<li>缺陷总数 {total_html} 个，总共待解决 {unresolved_html} 个，总共延期 {delayed_html} 个，当日新增缺陷数 {today_html} 个{_build_trend_suffix(daily_counts)}</li>"
+        f"<li>缺陷总数 {total_html} 个，共待解决 {unresolved_html} 个，共延期 {delayed_html} 个，当日新增缺陷数 {today_html} 个{_build_trend_suffix(daily_counts)}</li>"
     ]
 
     # 第 2 点：缺陷类型分布
@@ -878,9 +878,18 @@ def _j_para(*spans: list, list_attrs: dict | None = None, jc: str | None = None)
     return ["p", attrs, *spans]
 
 
-def _j_a_leaf(text: str, href: str) -> list:
-    """jsonml hyperlink: ["a", {"href": href}, ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, text]]]"""
-    return ["a", {"href": href}, ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, text]]]
+def _j_bug_text(title: str, url: str) -> list:
+    """Plain-text bug title with bug ID for jsonml table cells.
+
+    DingTalk jsonml table normalization forbids ``a`` tags inside ``tc``;
+    using one causes the offending ``tr`` **and all subsequent rows** to be
+    silently dropped.  We therefore render bug titles as plain text with the
+    bug ID appended in parentheses, e.g. "缺陷标题（bug/86442288）".
+    """
+    # Extract bug ID from URL like .../bug/86442288
+    bug_id = url.rsplit("/bug/", 1)[-1].rstrip("/") if "/bug/" in url else ""
+    display = f"{title}（bug/{bug_id}）" if bug_id else title
+    return _j_leaf(display)
 
 
 def _j_banner_row(text: str, col_span: int) -> list:
@@ -1074,7 +1083,7 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
     daily_counts = _parse_daily_bug_counts(data) if render_trend else []
     render_trend = render_trend and bool(daily_counts)
 
-    # Line 1: 缺陷总数 / 总共待解决 / 总共延期 / 当日新增缺陷数
+    # Line 1: 缺陷总数 / 共待解决 / 共延期 / 当日新增缺陷数
     t_d, t_w = _METRIC_THRESHOLDS["total"]
     u_d, u_w = _METRIC_THRESHOLDS["unresolved"]
     d_d, d_w = _METRIC_THRESHOLDS["delayed"]
@@ -1088,9 +1097,9 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
     line1: list[list] = [
         _j_leaf("缺陷总数 "),
         _j_leaf(str(total_defect_count), color=total_color),
-        _j_leaf(" 个，总共待解决 "),
+        _j_leaf(" 个，共待解决 "),
         _j_leaf(str(unresolved_count), color=unresolved_color),
-        _j_leaf(" 个，总共延期 "),
+        _j_leaf(" 个，共延期 "),
         _j_leaf(str(delayed_count), color=delayed_color),
         _j_leaf(" 个，当日新增缺陷数 "),
         _j_leaf(str(today_bug_count), color=today_color),
@@ -1162,7 +1171,7 @@ def _j_bug_paragraphs(bugs: list[dict[str, Any]], data: dict[str, Any]) -> list[
 
         spans: list[list] = [_j_leaf(f"{idx}. ")]
         if url:
-            spans.append(_j_a_leaf(title, url))
+            spans.append(_j_bug_text(title, url))
         else:
             spans.append(_j_leaf(title))
         spans.append(_j_leaf(f" ｜ @{owner}"))
