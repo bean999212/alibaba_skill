@@ -1,7 +1,7 @@
 ---
 name: aladdin-ione-daily-test-report
 description: 根据用户输入的需求名称或测试计划名称进行全局模糊匹配；若输入为纯数字 ID，则按 ID 模糊搜索阿拉丁与 ione 平台上的需求及阿拉丁测试计划。每次执行时必须基于用户本次输入重新搜索，禁止使用历史报告元数据、缓存文件或过往会话中保存的 ID 作为搜索入参。经用户确认后拉取用例测试执行进度与缺陷数据，结合项目发布时间评估测试风险；生成日报后通过 DWS 拉取钉钉群列表并让用户多选目标群，支持固定时间或连续多日的定时发送。Use when the user needs daily test progress reports, release risk assessment, requirement-based data retrieval, DingTalk group messaging, or integration of Aladdin and ione platform data.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # 阿拉丁 + ione 每日测试风险日报
@@ -299,13 +299,13 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 生成报告时，必须同时产出并保留以下两种格式，最终一并提供给用户：
 
 - **HTML 文件**：基于 `report-template.html` 渲染生成的完整 HTML 日报，保存到 `outputs/` 目录，文件名建议包含项目名称与日期（如 `<project>_daily_report_<YYYY-MM-DD>.html`）。该文件用于离线查看、邮件附件或二次处理。
-- **钉钉文档**：将日报内容写入钉钉在线文档，便于团队协同、评论与分享。写入时需将 HTML 表格结构等价转换为钉钉 jsonml 格式，并按要求插入 Chart.js 图表 PNG。
+- **钉钉文档**：将日报内容写入钉钉在线文档，便于团队协同、评论与分享。写入时**必须调用 `report_generator.py` 的 `generate_daily_report_jsonml(data)` 函数**生成 jsonml，再通过 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。**禁止手动拼接 jsonml 节点**——手动构建极易遗漏 `hidden: true` 占位 `tc`、`sr: true`、`colsWidth` 等钉钉表格必需属性，导致文档内容不渲染或被静默截断。
 
 两种格式的内容必须保持一致；钉钉文档创建/更新完成后，需向用户同时返回 HTML 文件路径和钉钉文档链接。
 
 **HTML ↔ 钉钉 jsonml 严格一致（强制）**：钉钉文档 jsonml 必须与 HTML 日报在以下维度**逐字对应**，禁止因分别构建而导致内容/样式偏差：
 
-1. **文本内容一致**：每个单元格的文案必须完全相同——包括缺陷统计数值、分析结论、风险说明措辞、进度简述措辞、未关闭缺陷分析文本等。禁止 HTML 与 jsonml 使用不同的代码路径生成文本（例如 HTML 用 `_build_unclosed_defect_analysis(all_bugs)` 而 jsonml 用另一段逻辑只分析 `new_bugs + later_bugs`，导致结论不同）。正确做法：**先生成 HTML（调用 `report_generator.py` 的 `render_html`），再从 HTML 渲染结果中提取每段文本用于构建 jsonml**，确保两者文字一字不差。
+1. **文本内容一致**：每个单元格的文案必须完全相同——包括缺陷统计数值、分析结论、风险说明措辞、进度简述措辞、未关闭缺陷分析文本等。禁止 HTML 与 jsonml 使用不同的代码路径生成文本（例如 HTML 用 `_build_unclosed_defect_analysis(all_bugs)` 而 jsonml 用另一段逻辑只分析 `new_bugs + later_bugs`，导致结论不同）。正确做法：**HTML 调用 `render_html(template_html, data)`、钉钉文档调用 `generate_daily_report_jsonml(data)`，两者传入完全相同的 `data` 字典**。`report_generator.py` 内部的 `render_jsonml()` 与 `render_html()` 共享同一套数据处理逻辑（风险等级判定、颜色映射、缺陷分布聚合、未关闭缺陷分析等），从数据源头保证文字一字不差。
 2. **颜色标识一致**：HTML 中通过 CSS class 着色的数值/文本，在 jsonml 中必须通过 leaf `color` 属性设为等价色值：
 
    | HTML CSS class | 色值 | jsonml leaf `color` | 使用场景 |
@@ -321,12 +321,13 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
    jsonml 实现方式：将一段文本拆为多个 `span(data-type:text) > span(data-type:leaf, color:xxx)` 节点，每个 leaf 的 `color` 对应上表色值。例如「缺陷总数 `<红>121</红>` 个，共待解决 `<黄>4</黄>` 个，共延期 `<红>2</红>` 个，当日新增缺陷数 `<绿>0</绿>` 个」→ `["span",{"data-type":"text"},["span",{"data-type":"leaf"},"缺陷总数 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#ff4d4f"},"121"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，共待解决 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#faad14"},"4"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，共延期 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#ff4d4f"},"2"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个，当日新增缺陷数 "]], ["span",{"data-type":"text"},["span",{"data-type":"leaf","color":"#52c41a"},"0"]], ["span",{"data-type":"text"},["span",{"data-type":"leaf"}," 个"]]`。
 3. **结构一致**：汇总中"见下方图表"（当图表渲染为 PNG 时）vs 完整文字列表（当不渲染图表时）的判定逻辑必须在两种格式中保持一致。禁止 HTML 显示"见下方图表"+ 图表而 jsonml 仍展示完整模块/开发者列表，或反之。
 4. **风险等级标识一致**：HTML 用 `<span class="risk-badge risk-<level>">` 渲染彩色圆点+文字，jsonml 用对应 emoji（⚪/🟢/🟡/🔴）+ 文字。
+5. **禁止分别手动修改 HTML 和 jsonml（强制）**：HTML 日报和钉钉文档 jsonml 必须始终由 `report_generator.py` 从同一份 `data` 字典生成（`render_html` + `render_jsonml`）。**禁止对已生成的 HTML 文件或 jsonml 文件做手动文本替换后再单独同步另一份**——这种做法极易遗漏或产生偏差（如修了 HTML 的「缺陷总数」但忘改 jsonml，或改了未关闭缺陷分析文本但颜色标识不一致）。正确做法：修改 `data` 字典或 `report_generator.py` 的逻辑后，重新调用两个渲染函数，用全新输出覆盖 HTML 文件和钉钉文档。生成后须做一致性校验：对比 HTML 与 `dws doc read` 返回的 markdown 中关键数值（缺陷总数、共待解决、共延期、未关闭缺陷分析文本）是否逐字相同。
 
 该模板定义了日报的权威版式：一张 5 列、带合并单元格的表格，包含四个蓝色横幅分区——「■ {项目名称}整体概述」「■ 缺陷情况」「■ 问题记录」「■ 变更卡点」；其中「项目进度」单元格纵向合并覆盖风险等级/风险说明（风险等级为「无」时显示为「进度简述」）/测试进度共 3 行。生成前先读取该模板文件，严格按其结构、列宽、合并方式与蓝色横幅样式来组织内容；渲染时需将模板中的 `{风险说明标签}` 占位符替换为「进度简述」或「风险说明」。
 
 **不包含「今日进展」模块（强制）**：日报不再输出「今日进展」这一行。无论 HTML 还是钉钉文档，「■ 整体概述」分区都只包含风险等级、风险说明/进度简述、测试进度 3 行，其后直接进入「■ 缺陷情况」横幅。禁止再新增或保留「今日进展」标签行与其值单元格。
 
-写入钉钉文档时，由于钉钉文档不渲染原始 HTML `<table>`，需将该 HTML 模板的结构等价转换为钉钉的 jsonml 表格（保留 5 列列宽、rowSpan/colSpan 合并、蓝色横幅 `fill: rgba(0, 96, 255, 0.98)` + 白色加粗文字 + **文字左对齐**——HTML 横幅 `.banner` 无 `text-align` 属性，默认左对齐，jsonml 横幅 `p` 节点**不得设 `jc`**，保持默认左对齐），再通过 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。
+写入钉钉文档时，**必须调用 `generate_daily_report_jsonml(data)` 获取 jsonml 列表**，再用 `json.dump` 序列化为 JSON 字符串后通过 `--content-file` 传入 `dws doc create/update --content-format jsonml --fix-jsonml` 写入。该函数内部已将 HTML 模板的结构等价转换为钉钉 jsonml 表格（5 列列宽 `colsWidth: [150, 170, 227, 227, 227]`、rowSpan/colSpan 合并、`hidden: true` 占位 `tc`、蓝色横幅 `fill: rgba(0, 96, 255, 0.98)` + 白色加粗文字 + **文字左对齐**——横幅 `p` 节点**不得设 `jc`**，保持默认左对齐）。**禁止绕过该函数手动拼接 jsonml 节点。**
 
 **jsonml 表格内禁止使用 `a` 标签（强制）**：钉钉文档的表格规范化（`--fix-jsonml`）不允许 `tc` 单元格内出现 `a`（超链接）标签。一旦表格内含有 `a` 节点，规范化会将该 `tr` 及**其后所有 `tr` 行一并丢弃**，导致文档从缺陷行起被静默截断——「later」「问题记录」「变更卡点」等后续分区全部丢失，且创建命令仍返回 `success: true`，仅有一条 `tag "a" not in parent's allowed_children` warning，极易被忽略。**替代写法**：在 jsonml 表格中，将 HTML 的 `<a href="...">缺陷标题</a> ｜ @花名` 替换为纯文本 `缺陷标题（bug/<bugId>） ｜ @花名`，仅保留缺陷 ID 供检索。HTML 版本仍然使用 `<a>` 超链接不受影响。
 
@@ -558,7 +559,7 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 本 Skill 的日报生成参考实现由以下两个核心文件组成：
 
 - `assets/report-template.html`：权威 HTML 版式模板，定义 5 列表格、蓝色横幅与单元格合并结构。
-- `report_generator.py`：读取模板并按本规范填充内容的 Python 参考实现。
+- `report_generator.py`：读取模板并按本规范填充内容的 Python 参考实现。同时提供 HTML 渲染（`render_html`）与钉钉 jsonml 渲染（`render_jsonml` / `generate_daily_report_jsonml`）两条路径，共享同一份 `data` 字典以确保两种输出格式的内容严格一致。
 
 ##### 模板占位符
 
@@ -601,6 +602,53 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 - `_build_trend_analysis(daily_counts)`：根据每日缺陷数量走势生成一句简要分析（上升 / 收敛 / 平稳）。将数据按时间等分为前后两段，比较日均新增量：后半段日均比前半段高 30% 以上为上升，低 30% 以上为收敛，其余为平稳。
 - `_build_trend_suffix(daily_counts)`：将走势分析包装为可直接拼接到汇总第 1 点末尾的后缀（前缀逗号），无数据时返回空串。
 - `render_html(template_html, data)`：统一替换模板占位符，生成最终 HTML。
+- `render_jsonml(data, image_srcs=None)`：根据与 `render_html` 相同的 `data` 字典，生成钉钉 jsonml 表格节点（`["table", {...}, row1, row2, ...]`）。内部复用 `build_progress_brief` / `build_risk_description` / `_build_summary_cell` 等文本生成函数提取文案，并通过 `_j_leaf(text, color)` / `_j_para(*leaves, jc)` / `_j_banner_row(text, cols)` / `_j_risk_paragraphs(data)` / `_j_summary_paragraphs(data, image_srcs)` / `_j_bug_paragraphs(bugs, data)` 等辅助函数构建 jsonml 节点树。**jsonml 中缺陷标题使用纯文本 `缺陷标题（bug/<bugId>） ｜ @花名`，不生成 `a` 标签。**
+- `generate_daily_report_jsonml(data, image_srcs=None)`：包装 `render_jsonml` 的输出为 `["root", {}, table]`，可直接 `json.dump` 序列化后通过 `--content-file` 传入 `dws doc create/update`。**这是生成钉钉文档 jsonml 的唯一入口，禁止绕过此函数手动拼接。**
+
+##### 日报数据字典（`data`）必需字段
+
+`render_html` 与 `generate_daily_report_jsonml` 共用同一个 `data` 字典，必需字段如下：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `requirement_name` | `str` | 项目/需求名称，用于横幅标题 |
+| `risk_level` | `str` | 风险等级：「无」「低」「中」「高」 |
+| `days_until_release` | `int` | 距发布剩余天数 |
+| `total_cases` | `int` | 用例总数 |
+| `executed_cases` | `int` | 已执行用例数 |
+| `failed_cases` | `int` | 失败用例数 |
+| `execution_rate` | `float` | 执行率（0~1） |
+| `pass_rate` | `float` | 通过率（0~1） |
+| `unclosed_p0_p1` | `int` | 未关闭 P0/P1 缺陷数 |
+| `total_defect_count` | `int` | 缺陷总数（项目全量） |
+| `new_bugs` | `list[dict]` | New 状态缺陷列表 |
+| `later_bugs` | `list[dict]` | Later 状态缺陷列表 |
+| `all_bugs` | `list[dict]` | 全量缺陷列表（用于分布统计） |
+| `test_plans` | `list[dict]` | 测试计划列表（含 `name` 字段） |
+| `daily_bug_counts` | `list[dict]` | 每日缺陷数 `[{"date":"MM-DD","count":N}, ...]` |
+| `test_duration_days` | `int` | 缺陷创建日实际跨度（最早~最晚） |
+| `issue_notes` | `str` | 问题记录正文 |
+| `change_notes` | `str` | 变更卡点正文 |
+
+每条缺陷字典必需字段：`title`、`bug_id`、`severity`、`developer`（= `owner`）、`type`、`module`、`aone_project_id`。`type` 须从标题关键词推断子类型（功能缺陷/UI缺陷/性能问题/配置问题），不能直接使用 coop 返回的 `"Bug"`。
+
+**钉钉文档写入示例**：
+
+```python
+import sys, json
+sys.path.insert(0, "~/.qoderwork/skills/aladdin-ione-daily-test-report")
+from report_generator import generate_daily_report_jsonml, render_html
+
+# data = {...}  # 按上表构造
+# 1. 生成 HTML
+html = render_html(open("assets/report-template.html").read(), data)
+# 2. 生成 jsonml
+jsonml = generate_daily_report_jsonml(data)
+# 3. 写入文件后通过 dws 上传
+with open("report_jsonml.json", "w") as f:
+    json.dump(jsonml, f, ensure_ascii=False)
+# dws doc update --node <nodeId> --content-format jsonml --fix-jsonml --content-file report_jsonml.json
+```
 
 ##### 图表渲染与数据约定
 
