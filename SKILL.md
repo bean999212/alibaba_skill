@@ -724,14 +724,21 @@ with open("report_jsonml.json", "w") as f:
 
 ### 10. 执行发送或创建定时任务
 
-**发送到钉钉群时，必须同时发送日报截图（图片消息）和钉钉文档链接（文字消息），共两条消息。** 截图让群成员在聊天窗口直接预览完整日报，文档链接供需要深入查看或评论的成员使用。
+**发送到钉钉群时，必须同时发送以下三种内容，让群成员有多种查看方式：**
+
+1. **日报截图（图片消息）**：在聊天窗口直接预览完整日报，最直观。
+2. **钉钉文档链接（文字消息）**：供需要在线协同、评论的成员使用。
+3. **HTML 日报文件（文件消息）**：上传到群共享钉盘空间，群成员可直接点击下载并在浏览器中打开查看，公司内部人员均可访问。
 
 - **立即发送**：按以下步骤对每个选中的群依次执行：
-  1. **截图**：`node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出png路径> --scale 3`，生成全页高清 PNG。
-  2. **上传图片**：调用 `dt_media_upload` 工具上传截图 PNG，获取返回的 URL；再用 `python ~/.qoderwork/skills/dws/scripts/extract_media_id.py "<URL>"` 提取 `mediaId`。
-  3. **发送图片消息**：`dws chat message send --group <openConversationId> --msg-type image --media-id <mediaId> --format json`。
-  4. **发送文档链接消息**：`dws chat message send --group <openConversationId> --title "<项目名称>测试日报" --text "钉钉文档：[点击查看](<钉钉文档URL>)" --format json`。
-- **固定时间发送**：使用 QoderWork 定时任务创建一个每日循环的 cron 任务，每天在同一时间自动执行本流程（拉数据 → 生成报告 → 截图 → 发图+链接）并发送到已选群。
+  1. **获取群共享空间**：`dws chat conversation-info --group <openConversationId> --format json`，从返回中提取 `newCSpaceIdIM` 作为群共享钉盘 `spaceId`。
+  2. **上传 HTML 到群共享空间**：`dws drive upload --file <html文件路径> --space-id <spaceId> --format json`，上传成功后从返回中提取 `fileId`（dentryUuid）；再用 `dws drive info --node <fileId> --space-id <spaceId> --format json` 获取 `dentryId` 和 `size`（字节数）。
+  3. **截图**：`node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出png路径> --scale 3`，生成全页高清 PNG。
+  4. **上传截图**：调用 `dt_media_upload` 工具上传截图 PNG，获取返回的 URL；再用 `python ~/.qoderwork/skills/dws/scripts/extract_media_id.py "<URL>"` 提取 `mediaId`。
+  5. **发送截图图片**：`dws chat message send --group <openConversationId> --msg-type image --media-id <mediaId> --format json`。
+  6. **发送文档链接**：`dws chat message send --group <openConversationId> --title "<项目名称>测试日报" --text "钉钉文档：[点击查看](<钉钉文档URL>)" --format json`。
+  7. **发送 HTML 文件**：`dws chat message send --group <openConversationId> --msg-type file --dentry-id <dentryId> --space-id <spaceId> --file-name "<项目名称>_daily_report_<日期>.html" --file-type "html" --file-path "<html文件路径>" --file-size <字节数> --format json`。
+- **固定时间发送**：使用 QoderWork 定时任务创建一个每日循环的 cron 任务，每天在同一时间自动执行本流程（拉数据 → 生成报告 → 上传 HTML → 截图 → 发图+链接+文件）并发送到已选群。
 - **连续多日发送**：创建 N 个一次性定时任务（或在任务逻辑中维护剩余天数计数器），从开始日期起连续 N 天发送；到期后自动停止。
 
 发送失败时，保存 HTML 报告到 `outputs/` 目录并提示用户手动处理；若钉钉文档已生成，也需保留其链接。
