@@ -304,6 +304,15 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
 
 两种格式的内容必须保持一致；钉钉文档创建/更新完成后，需向用户同时返回 **HTML 云盘链接**（`dws drive upload` 返回的 `docUrl`，点击可在浏览器中查看完整日报）和**钉钉文档链接**。
 
+**钉钉文档编辑后同步更新 HTML（强制）**：当用户在钉钉文档中手动编辑了日报内容后，需要将修改同步回 HTML 并重新上传云盘。调用 `report_generator.py` 的 `sync_from_dingtalk_doc(data, dws_markdown)` 函数完成同步，流程如下：
+
+1. `dws doc read --node-id <docId>` 获取最新 markdown
+2. `sync_from_dingtalk_doc(data, markdown)` — 从 markdown 中提取编辑后的关键数值（缺陷总数、共待解决、共延期、当日新增、执行进度、风险等级、未关闭缺陷分析、问题记录、变更卡点），就地更新 `data` 字典，返回 `{"data": data, "changes": [...]}`
+3. 若 `changes` 非空，打印变更列表供用户确认
+4. `generate_daily_report(data)` 重新生成 HTML，保存到 `outputs/`
+5. `dws drive upload --file <html> --yes` 重新上传到云盘，更新链接
+6. `verify_report_consistency(data, html, markdown)` 校验一致性，确认无误后返回更新后的云盘链接
+
 **HTML ↔ 钉钉 jsonml 严格一致（强制）**：钉钉文档 jsonml 必须与 HTML 日报在以下维度**逐字对应**，禁止因分别构建而导致内容/样式偏差：
 
 1. **文本内容一致**：每个单元格的文案必须完全相同——包括缺陷统计数值、分析结论、风险说明措辞、进度简述措辞、未关闭缺陷分析文本等。禁止 HTML 与 jsonml 使用不同的代码路径生成文本（例如 HTML 用 `_build_unclosed_defect_analysis(all_bugs)` 而 jsonml 用另一段逻辑只分析 `new_bugs + later_bugs`，导致结论不同）。正确做法：**HTML 调用 `render_html(template_html, data)`、钉钉文档调用 `generate_daily_report_jsonml(data)`，两者传入完全相同的 `data` 字典**。`report_generator.py` 内部的 `render_jsonml()` 与 `render_html()` 共享同一套数据处理逻辑（风险等级判定、颜色映射、缺陷分布聚合、未关闭缺陷分析等），从数据源头保证文字一字不差。

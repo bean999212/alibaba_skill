@@ -1345,6 +1345,124 @@ def generate_daily_report(data: dict[str, Any], config: dict[str, Any] | None = 
     return render_html(template_html, data)
 
 
+def sync_from_dingtalk_doc(
+    data: dict[str, Any],
+    dws_markdown: str,
+) -> dict[str, Any]:
+    """
+    从钉钉文档回读的 markdown 中提取编辑后的关键数值，更新 data 字典。
+
+    调用场景：用户在钉钉文档中手动编辑了日报内容后，需要将修改同步到 HTML。
+    使用流程：
+        1. dws doc read --node-id <docId> → 获取 markdown
+        2. sync_from_dingtalk_doc(data, markdown) → 更新 data
+        3. generate_daily_report(data) → 重新生成 HTML
+        4. dws drive upload --file <html> → 上传更新后的 HTML 到云盘
+
+    Args:
+        data: 原始 data 字典（会被就地修改并返回）
+        dws_markdown: dws doc read 返回的 markdown 字段
+
+    Returns:
+        {"data": updated_data, "changes": list[str]}  — changes 记录哪些字段被修改
+    """
+    import re
+
+    changes: list[str] = []
+    md = dws_markdown
+
+    def _extract_num(pattern: str, label: str) -> int | None:
+        m = re.search(pattern, md)
+        if m:
+            return int(m.group(1))
+        return None
+
+    # ── 1. 缺陷总数 ────────────────────────────────────────────
+    v = _extract_num(r'缺陷总数[^\d]*(\d+)', "缺陷总数")
+    if v is not None and v != data.get("total_defect_count"):
+        changes.append(f"缺陷总数: {data.get('total_defect_count')} → {v}")
+        data["total_defect_count"] = v
+
+    # ── 2. 共待解决 ────────────────────────────────────────────
+    v = _extract_num(r'共待解决[^\d]*(\d+)', "共待解决")
+    if v is not None and v != data.get("unresolved_count"):
+        changes.append(f"共待解决: {data.get('unresolved_count')} → {v}")
+        data["unresolved_count"] = v
+
+    # ── 3. 共延期 ──────────────────────────────────────────────
+    v = _extract_num(r'共延期[^\d]*(\d+)', "共延期")
+    if v is not None and v != data.get("delayed_count"):
+        changes.append(f"共延期: {data.get('delayed_count')} → {v}")
+        data["delayed_count"] = v
+
+    # ── 4. 当日新增缺陷数 ──────────────────────────────────────
+    v = _extract_num(r'当日新增缺陷数[^\d]*(\d+)', "当日新增缺陷数")
+    if v is not None and v != data.get("today_bug_count"):
+        changes.append(f"当日新增缺陷数: {data.get('today_bug_count')} → {v}")
+        data["today_bug_count"] = v
+
+    # ── 5. 测试执行进度 (executed/total) ───────────────────────
+    m = re.search(r'测试执行进度[^\d]*(\d+)/(\d+)', md)
+    if m:
+        executed, total_cases = int(m.group(1)), int(m.group(2))
+        if executed != data.get("executed_cases") or total_cases != data.get("total_cases"):
+            changes.append(
+                f"执行进度: {data.get('executed_cases')}/{data.get('total_cases')} → {executed}/{total_cases}"
+            )
+            data["executed_cases"] = executed
+            data["total_cases"] = total_cases
+            if total_cases > 0:
+                data["execution_rate"] = executed / total_cases
+
+    # ── 6. 风险等级 ────────────────────────────────────────────
+    risk_map = {"无": "无", "低": "低", "中": "中", "高": "高"}
+    for emoji_level in [("⚪", "无"), ("🟢", "低"), ("🟡", "中"), ("🔴", "高")]:
+        if emoji_level[0] in md:
+            new_level = emoji_level[1]
+            if new_level != data.get("risk_level"):
+                changes.append(f"风险等级: {data.get('risk_level')} → {new_level}")
+                data["risk_level"] = new_level
+            break
+
+    # ── 7. 未关闭 P0/P1 缺陷数 ────────────────────────────────
+    v = _extract_num(r'未关闭\s*P0/P1\s*缺陷[^\d]*(\d+)', "未关闭P0/P1")
+    if v is not None and v != data.get("unclosed_p0_p1"):
+        changes.append(f"未关闭P0/P1: {data.get('unclosed_p0_p1')} → {v}")
+        data["unclosed_p0_p1"] = v
+
+    # ── 8. 未关闭缺陷分析文本 ──────────────────────────────────
+    m = re.search(r'未关闭缺陷分析[：:]\s*(.+?)(?:\n|$)', md)
+    if m:
+        new_analysis = m.group(1).strip()
+        # 去掉末尾的 </li> 等 HTML 残留
+        new_analysis = re.sub(r'</?\w+[^>]*>', '', new_analysis).strip()
+        if new_analysis:
+            data["_edited_unclosed_analysis"] = new_analysis
+            changes.append(f"未关闭缺陷分析文本已更新")
+
+    # ── 9. 问题记录文本 ────────────────────────────────────────
+    # 提取 ■ 问题记录 到 ■ 变更卡点 之间的内容
+    m = re.search(r'■\s*问题记录.*?\|\s*(.*?)\s*\|', md, re.DOTALL)
+    if m:
+        issue_text = m.group(1).strip()
+        # 清理 HTML 标签
+        issue_text = re.sub(r'</?\w+[^>]*>', '', issue_text).strip()
+        if issue_text and issue_text != "无":
+            data["_edited_issue_notes"] = issue_text
+            changes.append("问题记录文本已更新")
+
+    # ── 10. 变更卡点文本 ───────────────────────────────────────
+    m = re.search(r'■\s*变更卡点.*?\|\s*(.*?)\s*\|', md, re.DOTALL)
+    if m:
+        change_text = m.group(1).strip()
+        change_text = re.sub(r'</?\w+[^>]*>', '', change_text).strip()
+        if change_text and change_text != "无":
+            data["_edited_change_notes"] = change_text
+            changes.append("变更卡点文本已更新")
+
+    return {"data": data, "changes": changes}
+
+
 def verify_report_consistency(
     data: dict[str, Any],
     html: str,
