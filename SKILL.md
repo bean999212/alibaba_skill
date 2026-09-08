@@ -562,11 +562,35 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 2. **不再保留文字汇总**：
    - 当高清 PNG 成功生成并插入文档后，文档中**不再保留**「图表数据汇总」标题及其文字版分布/走势数据；图片本身即为图表的唯一展示形式。
    - 仅当 PNG 生成失败或插入全部失败时，才允许在文档中回退为文字汇总，并明确告知用户「图表转 PNG 失败，当前以文字汇总展示」。
-3. **插入钉钉文档**（三步流程，`dws doc media insert` 不会把图片写入表格单元格，只追加为文档末尾独立段落）：
+3. **插入钉钉文档**（5 步流程，图片必须以 proxy URL 嵌入表格单元格）：
    - 图表 PNG 必须最终落在「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。**每张图片前必须插入对应标题文字段落**（`_j_para(_j_leaf("业务模块分布"))` / `"开发责任人分布"` / `"每日缺陷走势"`），与 HTML 格式的 `chart-title` 保持一致。
-   - **推荐方式 — 整文档 overwrite 带图**：在 jsonml 中将 `img` 节点（含 OSS URL）直接嵌入「汇总」单元格的 `tc` 内，然后调用 `dws doc update --mode overwrite --no-fix-jsonml`。**关键：必须使用 `--no-fix-jsonml`**，因为 `--fix-jsonml` 会将 `tc` 内的 `img` 标签视为非法并剥掉。图片 URL 来源：先 `dws doc media insert` 上传图片，再通过 `dws doc read` 回读 markdown 提取 `aliyuncs` OSS 链接（`![](URL)` 格式）。上传产生的临时段落用 `dws doc block delete` 逐个清除，最后再执行 overwrite。**两项必做**：① 回读到的 URL 带 `Expires`/`OSSAccessKeyId`/`Signature` 签名参数，是临时 URL，过期后图片会加载失败——**必须去掉这三个参数只保留永久 URL**（如 `https://alidocs2.oss-cn-zhangjiakou.aliyuncs.com/res/xxx/img/yyy.png`）再写入 jsonml 的 `img src`；② overwrite 完成后，**必须再次对每张图执行 `dws doc media insert`**（追加为文档末尾独立块），确保 OSS 文件有活跃引用，否则图片仍可能加载失败。insert 产生的临时段落无需删除，它们作为图片的活跃引用保留在文档末尾。
-   - **备选方式 — 3 步 block 操作**：（A）`dws doc media insert` 上传图片获取独立段落；（B）`dws doc read` 回读提取 OSS URL，用 `dws doc block update --block-id <tc_uuid> --content-format jsonml --no-fix-jsonml --element "..."` 更新汇总单元格，将 `img` 写入 `tc` 末尾；（C）`dws doc block delete` 删除临时段落。**注意：`block update` 同样有 `--no-fix-jsonml` 标志，必须使用以保留 `tc` 内的 `img` 标签。**
-   - 更新后使用 `dws doc read --node <doc_node_id> --content-format jsonml` 回读，确认 `img` 节点位于「汇总」单元格内部且 `src` 指向钉钉内部资源路径，同时确认文档末尾无残留的临时图片段落。
+
+   **⚠️ 图片渲染硬约束（2026-09 验证）：**
+   - **img src 必须是钉钉内部代理 URL**（`/core/api/resources/img/<hash>`），**禁止使用 OSS URL**（`alidocs2.oss-cn-zhangjiakou.aliyuncs.com/...`）。OSS URL 在表格单元格内无法渲染，即使网络请求返回 200 也不会显示图片。
+   - **img 节点必须包含 `uuid` 和 `width` 属性**：`["img", {"src": PROXY_URL, "uuid": "<uuid>", "width": 500}]`。**不要包含 `height`**（钉钉自动计算宽高比，加 height 会拉伸图片）。
+   - **父 p 节点也必须有 uuid，且 img 后必须有尾随空 span**：`["p", {"uuid": "..."}, ["img", {...}], ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, ""]]]`
+   - `report_generator.py` 中的 `_j_image_para()` 和 `_enrich_img_nodes()` 会自动处理上述结构，**必须使用 `generate_daily_report_jsonml()` 生成 jsonml**，不要手动拼接 img 节点。
+
+   **完整执行流程：**
+
+   **Step 1 — 上传图表 PNG 获取 proxy URL：**
+   对每张需要渲染的图表执行 `dws doc media insert --node <DOC_ID> --file <png_path>`，将图片作为独立段落插入文档末尾。
+
+   **Step 2 — 从 block list 提取 proxy URL（关键步骤）：**
+   执行 `dws doc block list --node <DOC_ID> --content-format jsonml`，解析返回的 standalone 段落（`blockType: "p"`）中的 `img.src` 字段。该字段值即为 **proxy URL**（格式为 `/core/api/resources/img/<hash>`）。
+   - **禁止用 `dws doc read` 提取 OSS URL** — `doc read` 返回的 markdown 中是 OSS URL，在表格单元格内不可用。
+   - **禁止去掉 proxy URL 的任何部分** — proxy URL 是完整的永久路径，不需要去除参数。
+
+   **Step 3 — 组装 image_srcs 并生成 jsonml：**
+   将提取到的 proxy URL 组装为 `image_srcs` 字典（如 `{"module": "/core/api/resources/img/...", "trend": "/core/api/resources/img/..."}`），传入 `generate_daily_report_jsonml(data, image_srcs)` 生成完整的 jsonml 表格。
+
+   **Step 4 — 写入钉钉文档：**
+   使用 `dws doc update --mode overwrite --content-format jsonml --no-fix-jsonml` 或 `dws doc block update --block-id <table_id> --content-format jsonml --no-fix-jsonml` 将 jsonml 写入文档。**`--no-fix-jsonml` 是必须的**，`--fix-jsonml` 会静默丢弃 `tc` 内的 `img` 标签。
+
+   **Step 5 — 清理 standalone 段落：**
+   用 `dws doc block delete --block-id <standalone_id>` 删除 Step 1 产生的临时图片段落。**proxy URL 在 standalone 段落删除后仍然有效**（它们指向 OSS 永久资源），表格内的图片不会受影响。
+
+   **验证：** 在**新的浏览器 tab** 中打开文档确认图片渲染成功（`data-status="success"`）。注意：同一 tab 在多次 block 操作后渲染器可能卡住（`data-status` 永远停留在 `"loading"`），这是渲染器 bug 而非 URL 问题，打开新 tab 即可确认。
 4. **插入语雀文档**：
    - 通过语雀文档编辑器或对应 API 将需要渲染的 PNG 上传到文档附件，并插入到「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序同样为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。
    - 上传后重新读取文档内容，确认图片位于「汇总」单元格内。
@@ -623,8 +647,10 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 - `_build_trend_analysis(daily_counts)`：根据每日缺陷数量走势生成一句简要分析（上升 / 收敛 / 平稳）。将数据按时间等分为前后两段，比较日均新增量：后半段日均比前半段高 30% 以上为上升，低 30% 以上为收敛，其余为平稳。
 - `_build_trend_suffix(daily_counts)`：将走势分析包装为可直接拼接到汇总第 1 点末尾的后缀（前缀逗号），无数据时返回空串。
 - `render_html(template_html, data)`：统一替换模板占位符，生成最终 HTML。
-- `render_jsonml(data, image_srcs=None)`：根据与 `render_html` 相同的 `data` 字典，生成钉钉 jsonml 表格节点（`["table", {...}, row1, row2, ...]`）。内部复用 `build_progress_brief` / `build_risk_description` / `_build_summary_cell` 等文本生成函数提取文案，并通过 `_j_leaf(text, color)` / `_j_para(*leaves, jc)` / `_j_banner_row(text, cols)` / `_j_risk_paragraphs(data)` / `_j_summary_paragraphs(data, image_srcs)` / `_j_bug_paragraphs(bugs, data)` 等辅助函数构建 jsonml 节点树。**jsonml 中缺陷标题使用纯文本 `缺陷标题（bug/<bugId>） ｜ @花名`，不生成 `a` 标签。**
-- `generate_daily_report_jsonml(data, image_srcs=None)`：包装 `render_jsonml` 的输出为 `["root", {}, table]`，可直接 `json.dump` 序列化后通过 `--content-file` 传入 `dws doc create/update`。**这是生成钉钉文档 jsonml 的唯一入口，禁止绕过此函数手动拼接。**
+- `render_jsonml(data, image_srcs=None)`：根据与 `render_html` 相同的 `data` 字典，生成钉钉 jsonml 表格节点（`["table", {...}, row1, row2, ...]`）。内部复用 `build_progress_brief` / `build_risk_description` / `_build_summary_cell` 等文本生成函数提取文案，并通过 `_j_leaf(text, color)` / `_j_para(*leaves, jc)` / `_j_image_para(src)` / `_j_banner_row(text, cols)` / `_j_risk_paragraphs(data)` / `_j_summary_paragraphs(data, image_srcs)` / `_j_bug_paragraphs(bugs, data)` 等辅助函数构建 jsonml 节点树。**jsonml 中缺陷标题使用 `a` 标签生成 Aone 超链接，格式为 `序号. <a href="...">标题（bug/<bugId>）</a> ｜ @花名`（须配合 `--no-fix-jsonml` 写入）。**
+- `generate_daily_report_jsonml(data, image_srcs=None)`：包装 `render_jsonml` 的输出，调用 `_enrich_img_nodes()` 后处理整棵树，确保所有 `img` 节点满足钉钉渲染约束（uuid、width、parent p uuid、trailing empty span），最终返回 `["root", {}, table]`，可直接 `json.dump` 序列化后通过 `--content-file` 传入 `dws doc create/update`。**这是生成钉钉文档 jsonml 的唯一入口，禁止绕过此函数手动拼接。**
+- `_j_image_para(src)`：生成符合钉钉 jsonml 渲染约束的图片段落节点 `["p", {uuid}, ["img", {src, uuid, width:500}], ["span",{...},""]]`。img src 必须为钉钉内部代理 URL（`/core/api/resources/img/<hash>`），不能使用 OSS 直链。
+- `_enrich_img_nodes(node)`：递归遍历 jsonml 节点树，修补任何缺失 `uuid` / `width` 属性的 `img` 节点，移除 `height` 属性，并为包含 `img` 的 `p` 节点补充 uuid 和 trailing empty span。作为 `generate_daily_report_jsonml` 的后处理步骤，保证输出树中所有图片节点均满足钉钉渲染器要求。
 
 ##### 日报数据字典（`data`）必需字段
 

@@ -15,6 +15,7 @@ TODO：fetch_aladdin_progress / fetch_ione_defects / fetch_aone_project
 from __future__ import annotations
 
 import json
+import uuid as _uuid_mod
 from pathlib import Path
 from typing import Any
 
@@ -879,6 +880,104 @@ def _j_para(*spans: list, list_attrs: dict | None = None, jc: str | None = None)
     return ["p", attrs, *spans]
 
 
+# ---------------------------------------------------------------------------
+# DingTalk jsonml image rendering constraints (verified 2026-09)
+# ---------------------------------------------------------------------------
+# For images to render inside table cells (tc) in DingTalk documents:
+#
+# 1. img src MUST be a DingTalk internal proxy URL:
+#       /core/api/resources/img/<hash>
+#    OSS URLs (alidocs2.oss-cn-zhangjiakou.aliyuncs.com) DO NOT work.
+#
+# 2. img node MUST have uuid and width attributes:
+#       ["img", {"src": PROXY_URL, "uuid": "<uuid>", "width": 500}]
+#    Do NOT include height (DingTalk auto-calculates aspect ratio).
+#
+# 3. The parent p node MUST also have a uuid, and img MUST be followed by
+#    a trailing empty span sibling:
+#       ["p", {"uuid": "<uuid>"},
+#         ["img", {"src": "...", "uuid": "...", "width": 500}],
+#         ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, ""]]
+#       ]
+#
+# 4. Proxy URLs are obtained from standalone blocks created by
+#    `dws doc media insert`. Read them via:
+#       dws doc block list --content-format jsonml
+#    and parse the img.src from the standalone block's jsonml.
+#
+# 5. Proxy URLs remain valid even after deleting the standalone blocks.
+# ---------------------------------------------------------------------------
+
+_IMG_DEFAULT_WIDTH = 500
+
+
+def _j_image_para(src: str) -> list:
+    """Create a properly structured image paragraph for DingTalk table cells.
+
+    The paragraph includes uuid on both p and img, width (no height for auto
+    aspect ratio), and a mandatory trailing empty span sibling.
+    """
+    p_uuid = str(_uuid_mod.uuid4())
+    img_uuid = str(_uuid_mod.uuid4())
+    return [
+        "p", {"uuid": p_uuid},
+        ["img", {"src": src, "uuid": img_uuid, "width": _IMG_DEFAULT_WIDTH}],
+        ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, ""]],
+    ]
+
+
+def _enrich_img_nodes(node: Any) -> Any:
+    """Recursively walk jsonml tree and fix any img nodes missing required attrs.
+
+    This is a safety net: ensures ALL img nodes in the tree have uuid, width,
+    and a trailing empty span sibling — even if they were constructed manually
+    without using _j_image_para().
+    """
+    if not isinstance(node, list) or len(node) < 2:
+        return node
+
+    tag = node[0] if node else ""
+
+    if tag == "img":
+        attrs = node[1] if isinstance(node[1], dict) else {}
+        if "uuid" not in attrs:
+            attrs["uuid"] = str(_uuid_mod.uuid4())
+        if "width" not in attrs:
+            attrs["width"] = _IMG_DEFAULT_WIDTH
+        # Remove height if present (DingTalk auto-calculates aspect ratio)
+        attrs.pop("height", None)
+        node[1] = attrs
+        return node
+
+    # Recurse into children
+    new_children = [_enrich_img_nodes(child) for child in node[2:]]
+
+    # For p nodes, check if any child is img and ensure trailing span
+    if tag == "p":
+        has_img = any(
+            isinstance(c, list) and c and c[0] == "img" for c in new_children
+        )
+        if has_img:
+            # Ensure p has uuid
+            attrs = node[1] if isinstance(node[1], dict) else {}
+            if "uuid" not in attrs:
+                attrs["uuid"] = str(_uuid_mod.uuid4())
+                node[1] = attrs
+            # Check for trailing empty span
+            trailing = ["span", {"data-type": "text"}, ["span", {"data-type": "leaf"}, ""]]
+            has_trailing = any(
+                isinstance(c, list) and len(c) >= 3
+                and c[0] == "span" and isinstance(c[2], list)
+                and c[2][0] == "span" and len(c[2]) >= 3
+                and c[2][2] == ""
+                for c in new_children
+            )
+            if not has_trailing:
+                new_children.append(trailing)
+
+    return [node[0], node[1]] + new_children
+
+
 def _j_bug_text(title: str, url: str) -> list:
     """Clickable bug title with hyperlink for jsonml table cells.
 
@@ -1151,13 +1250,13 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
     # Image placeholders with titles (after the ordered list, matching HTML chart-title layout)
     if render_module:
         paragraphs.append(_j_para(_j_leaf("业务模块分布")))
-        paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("module", "")}]])
+        paragraphs.append(_j_image_para(image_srcs.get("module", "")))
     if render_developer:
         paragraphs.append(_j_para(_j_leaf("开发责任人分布")))
-        paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("developer", "")}]])
+        paragraphs.append(_j_image_para(image_srcs.get("developer", "")))
     if render_trend:
         paragraphs.append(_j_para(_j_leaf("每日缺陷走势")))
-        paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("trend", "")}]])
+        paragraphs.append(_j_image_para(image_srcs.get("trend", "")))
 
     return paragraphs
 
@@ -1337,8 +1436,13 @@ def render_jsonml(data: dict[str, Any], image_srcs: dict[str, str] | None = None
 def generate_daily_report_jsonml(
     data: dict[str, Any], image_srcs: dict[str, str] | None = None
 ) -> list:
-    """生成日报 jsonml（DingTalk 富文本表格），包装为 root 节点供 dws doc create 使用。"""
+    """生成日报 jsonml（DingTalk 富文本表格），包装为 root 节点供 dws doc create 使用。
+
+    Post-processing: _enrich_img_nodes ensures all img nodes have uuid, width,
+    and trailing span — required for DingTalk table cell image rendering.
+    """
     table = render_jsonml(data, image_srcs)
+    table = _enrich_img_nodes(table)
     return ["root", {}, table]
 
 
