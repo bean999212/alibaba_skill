@@ -1148,12 +1148,15 @@ def _j_summary_paragraphs(data: dict[str, Any], image_srcs: dict[str, str]) -> l
         _j_para(*line5, list_attrs={**list_attr, "start": 5}),
     ]
 
-    # Image placeholders (after the ordered list)
+    # Image placeholders with titles (after the ordered list, matching HTML chart-title layout)
     if render_module:
+        paragraphs.append(_j_para(_j_leaf("业务模块分布")))
         paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("module", "")}]])
     if render_developer:
+        paragraphs.append(_j_para(_j_leaf("开发责任人分布")))
         paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("developer", "")}]])
     if render_trend:
+        paragraphs.append(_j_para(_j_leaf("每日缺陷走势")))
         paragraphs.append(["p", {}, ["img", {"src": image_srcs.get("trend", "")}]])
 
     return paragraphs

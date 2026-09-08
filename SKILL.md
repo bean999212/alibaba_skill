@@ -1,7 +1,7 @@
 ---
 name: aladdin-ione-daily-test-report
 description: 根据用户输入的需求名称或测试计划名称进行全局模糊匹配；若输入为纯数字 ID，则按 ID 模糊搜索阿拉丁与 ione 平台上的需求及阿拉丁测试计划。每次执行时必须基于用户本次输入重新搜索，禁止使用历史报告元数据、缓存文件或过往会话中保存的 ID 作为搜索入参。经用户确认后拉取用例测试执行进度与缺陷数据，结合项目发布时间评估测试风险；生成日报后通过 DWS 拉取钉钉群列表并让用户多选目标群，支持固定时间或连续多日的定时发送。Use when the user needs daily test progress reports, release risk assessment, requirement-based data retrieval, DingTalk group messaging, or integration of Aladdin and ione platform data.
-version: 1.5.0
+version: 1.5.1
 ---
 
 # 阿拉丁 + ione 每日测试风险日报
@@ -563,7 +563,7 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
    - 当高清 PNG 成功生成并插入文档后，文档中**不再保留**「图表数据汇总」标题及其文字版分布/走势数据；图片本身即为图表的唯一展示形式。
    - 仅当 PNG 生成失败或插入全部失败时，才允许在文档中回退为文字汇总，并明确告知用户「图表转 PNG 失败，当前以文字汇总展示」。
 3. **插入钉钉文档**（三步流程，`dws doc media insert` 不会把图片写入表格单元格，只追加为文档末尾独立段落）：
-   - 图表 PNG 必须最终落在「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。
+   - 图表 PNG 必须最终落在「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。**每张图片前必须插入对应标题文字段落**（`_j_para(_j_leaf("业务模块分布"))` / `"开发责任人分布"` / `"每日缺陷走势"`），与 HTML 格式的 `chart-title` 保持一致。
    - **推荐方式 — 整文档 overwrite 带图**：在 jsonml 中将 `img` 节点（含 OSS URL）直接嵌入「汇总」单元格的 `tc` 内，然后调用 `dws doc update --mode overwrite --no-fix-jsonml`。**关键：必须使用 `--no-fix-jsonml`**，因为 `--fix-jsonml` 会将 `tc` 内的 `img` 标签视为非法并剥掉。图片 URL 来源：先 `dws doc media insert` 上传图片，再通过 `dws doc read` 回读 markdown 提取 `aliyuncs` OSS 链接（`![](URL)` 格式）。上传产生的临时段落用 `dws doc block delete` 逐个清除，最后再执行 overwrite。**两项必做**：① 回读到的 URL 带 `Expires`/`OSSAccessKeyId`/`Signature` 签名参数，是临时 URL，过期后图片会加载失败——**必须去掉这三个参数只保留永久 URL**（如 `https://alidocs2.oss-cn-zhangjiakou.aliyuncs.com/res/xxx/img/yyy.png`）再写入 jsonml 的 `img src`；② overwrite 完成后，**必须再次对每张图执行 `dws doc media insert`**（追加为文档末尾独立块），确保 OSS 文件有活跃引用，否则图片仍可能加载失败。insert 产生的临时段落无需删除，它们作为图片的活跃引用保留在文档末尾。
    - **备选方式 — 3 步 block 操作**：（A）`dws doc media insert` 上传图片获取独立段落；（B）`dws doc read` 回读提取 OSS URL，用 `dws doc block update --block-id <tc_uuid> --content-format jsonml --no-fix-jsonml --element "..."` 更新汇总单元格，将 `img` 写入 `tc` 末尾；（C）`dws doc block delete` 删除临时段落。**注意：`block update` 同样有 `--no-fix-jsonml` 标志，必须使用以保留 `tc` 内的 `img` 标签。**
    - 更新后使用 `dws doc read --node <doc_node_id> --content-format jsonml` 回读，确认 `img` 节点位于「汇总」单元格内部且 `src` 指向钉钉内部资源路径，同时确认文档末尾无残留的临时图片段落。
