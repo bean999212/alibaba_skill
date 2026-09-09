@@ -1,7 +1,7 @@
 ---
 name: aladdin-ione-daily-test-report
 description: 根据用户输入的需求名称或测试计划名称进行全局模糊匹配；若输入为纯数字 ID，则按 ID 模糊搜索阿拉丁与 ione 平台上的需求及阿拉丁测试计划。每次执行时必须基于用户本次输入重新搜索，禁止使用历史报告元数据、缓存文件或过往会话中保存的 ID 作为搜索入参。经用户确认后拉取用例测试执行进度与缺陷数据，结合项目发布时间评估测试风险；生成日报后通过 DWS 拉取钉钉群列表并让用户多选目标群，支持固定时间或连续多日的定时发送。Use when the user needs daily test progress reports, release risk assessment, requirement-based data retrieval, DingTalk group messaging, or integration of Aladdin and ione platform data.
-version: 1.5.1
+version: 1.5.3
 ---
 
 # 阿拉丁 + ione 每日测试风险日报
@@ -322,7 +322,7 @@ Aone 项目已确认。以下是在阿拉丁全局搜索到的测试计划，请
    |---------------|------|-------------------|---------|
    | `metric-danger` | `#ff4d4f` | `"#ff4d4f"` | 缺陷总数、共延期等超阈值数值 |
    | `metric-warning` | `#faad14` | `"#faad14"` | 共待解决、当日新增缺陷数等需关注数值 |
-   | `metric-success` | `#52c41a` | `"#52c41a"` | 测试执行进度百分比、已执行/总用例数 |
+   | `metric-success` | `#52c41a` | `"#52c41a"` | 测试执行进度百分比 |
    | `risk-high` | `#ff4d4f` | `"#ff4d4f"` | 风险等级为「高」时的风险说明正文 |
    | `risk-medium` | `#faad14` | `"#faad14"` | 风险等级为「中」时的风险说明正文 |
    | `risk-low` | `#52c41a` | `"#52c41a"` | 风险等级为「低」时的风险说明正文 |
@@ -456,14 +456,14 @@ HTML 日报中「风险等级」单元格必须同时展示**彩色实心圆点*
 根据风险等级分支处理：
 
 - **风险等级为「无」时**：单元格标题改为「进度简述」。内容必须包括：
-  1. 整体测试进度百分比（采用「测试执行进度：X%」格式，与「测试进度」单元格一致）与缺陷总数。**测试执行进度 X% 与「共执行 X/Y 条用例」的用例数标绿色**（HTML 用 `<span class="metric-success">`，钉钉 jsonml 对应 leaf `color:"#52c41a"`）。
-  2. 项目执行内容分析：结合当日已执行测试用例的覆盖范围、通过/失败分布、阻塞情况，以及当日新提缺陷的数量、严重程度、所属模块/站点等，说明当前测试重点、质量态势和主要发现（其中「共执行 X/Y 条用例」的用例数标绿色）。
+  1. 整体测试进度百分比（采用「测试执行进度：X%」格式，与「测试进度」单元格一致）与缺陷总数。**测试执行进度 X% 标绿色**（HTML 用 `<span class="metric-success">`，钉钉 jsonml 对应 leaf `color:"#52c41a"`）。
+  2. 项目执行内容分析：结合当日已执行测试用例的覆盖范围、通过/失败分布、阻塞情况，以及当日新提缺陷的数量、严重程度、所属模块/站点等，说明当前测试重点、质量态势和主要发现（其中「共执行 X% 用例」的百分比标绿色）。
   3. 总结简述：**测试执行进度、缺陷总数已在第 1 点描述过，此处不得重复**，仅陈述 P0/P1 缺陷情况等收尾信息。
 
   示例（内容本身不再重复「进度简述」四字，标签由左侧单元格展示；每一点独立成行；`[绿]` 标注处为绿色）：
   ```
   1. 测试执行进度：[绿]62.5%，缺陷总数：12
-  2. 今日共执行 [绿]48/80 条用例，无失败用例，当日新提 3 个 bug，均为中低优先级，分别涉及菲律宾站点税费展示与印尼站点物流状态同步。
+  2. 今日共执行 [绿]60.0% 用例，无失败用例，当日新提 3 个 bug，均为中低优先级，分别涉及菲律宾站点税费展示与印尼站点物流状态同步。
   3. 无未关闭 P0/P1 缺陷。
   ```
 
@@ -499,7 +499,7 @@ HTML 日报中「风险等级」单元格必须同时展示**彩色实心圆点*
   集运改版三期-菲律宾：40/40，失败用例：1
   ```
 
-> **颜色（强制）**：「测试进度」单元格中的**测试执行进度百分比**（多计划）与**已执行/总数用例数**（单计划）必须标绿色，与「进度简述」保持一致——HTML 用 `<span class="metric-success">`，钉钉 jsonml 对应 leaf `color:"#52c41a"`；两种格式一致。
+> **颜色（强制）**：「测试进度」单元格中的**测试执行进度百分比**必须标绿色，与「进度简述」保持一致——HTML 用 `<span class="metric-success">`，钉钉 jsonml 对应 leaf `color:"#52c41a"`；两种格式一致。
 
 不要额外展示通过数、通过率、阻塞/跳过数等信息，保持单元格简洁。
 
@@ -521,7 +521,7 @@ HTML 日报中「风险等级」单元格必须同时展示**彩色实心圆点*
    **数据颜色标识（强制）**：汇总中的关键数据必须根据状态使用不同颜色标注，**HTML 与钉钉 jsonml 两种格式都必须着色、且色值一致**：
    - **红色**：异常数据（未关闭高优先级缺陷 > 0、延期数 > 0 等）。HTML `<span class="metric-danger">`＝`#ff4d4f`，jsonml leaf `color:"#ff4d4f"`。
    - **黄色**：数据偏高或需关注（共待解决数超阈值等）。HTML `<span class="metric-warning">`＝`#faad14`，jsonml leaf `color:"#faad14"`。
-   - **绿色**：数据正常/进展顺利（无延期、执行进度百分比、已执行/总用例数等）。HTML `<span class="metric-success">`＝`#52c41a`，jsonml leaf `color:"#52c41a"`。
+   - **绿色**：数据正常/进展顺利（无延期、执行进度百分比等）。HTML `<span class="metric-success">`＝`#52c41a`，jsonml leaf `color:"#52c41a"`。
    
    着色粒度到单个数值而非整段文本：例如「缺陷总数 `<红>121</红>` 个，共待解决 `<黄>4</黄>` 个，共延期 `<红>2</红>` 个，当日新增缺陷数 `<绿>0</绿>` 个」中，"缺陷总数""个""共待解决""个""共延期""个""当日新增缺陷数""个"等文案不着色，仅数值部分着色。具体阈值由 `_METRIC_THRESHOLDS` 控制，`_metric_level()` 自动判定 danger/warning/success/none。
 
@@ -551,14 +551,15 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 当用户选择把日报保存到钉钉文档或语雀文档时，HTML 中基于 Chart.js 的统计图无法被这些在线文档直接渲染，因此必须执行以下步骤：
 
 1. **生成高清 PNG 图片**：
-   - 使用本地已安装的 Chrome（如 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`）结合 `puppeteer-core` 加载生成的 HTML 日报。
-   - 设置高分辨率截图：将页面 `viewport` 的 `deviceScaleFactor` 设为 **`4`**（例如 `page.setViewport({ width: 900, height: 1600, deviceScaleFactor: 4 })`），图表容器基础尺寸建议 `width: 750px; height: 400px`，确保最终 PNG 宽度 ≥ 2500px（750×4=3000），在钉钉文档中显示时文字、坐标轴、刻度、柱状/折线边缘清晰锐利。`deviceScaleFactor` 低于 3 时图片在 Retina 屏上会明显模糊，**禁止使用 1 或 2**。
-   - 等待 Chart.js 动画渲染完成后，按需对以下 `<canvas>` 分别截图：
-     - `#moduleChart`：业务模块分布柱状图，保存为 `module-chart.png`。
-     - `#developerChart`：开发责任人分布柱状图，保存为 `developer-chart.png`。
-     - `#trendChart`：每日缺陷走势折线图，保存为 `trend-chart.png`。
+   - 使用 `assets/screenshot_report.js` 的 `--charts` 模式对 HTML 日报中的每个 `<canvas>` 逐个截图：
+     ```bash
+     node ~/.qoderwork/skills/aladdin-ione-daily-test-report/assets/screenshot_report.js <html文件路径> <输出目录> --charts [--scale 4]
+     ```
+   - 脚本内部自动完成：启动本地 Chrome（puppeteer-core）、设置 `viewport: { width: 920, height: 2000, deviceScaleFactor: scale }`（默认 scale=4）、等待 Chart.js 动画渲染完成、逐一对每个 `<canvas>` 调用 `element.screenshot()` 导出 PNG。
+   - 输出文件按 canvas ID 映射命名：`moduleChart` → `module-chart.png`、`developerChart` → `developer-chart.png`、`trendChart` → `trend-chart.png`，保存至指定的输出目录。
    - 仅当对应图表满足上述「数据多」或「每日缺陷走势」渲染条件时才生成并插入该 PNG；条件不满足时直接以文字形式展示，不生成空白图片。
-   - 若本地无 `puppeteer-core`，优先执行 `npm install puppeteer-core` 安装，不要因此跳过图表插入。
+   - 脚本返回 JSON，包含 `charts` 数组（每项含 `canvasId`、`file`、`sizeBytes`），据此判断哪些图表已生成。
+   - `deviceScaleFactor` 低于 3 时图片在 Retina 屏上会明显模糊，**禁止使用 1 或 2**。
 2. **不再保留文字汇总**：
    - 当高清 PNG 成功生成并插入文档后，文档中**不再保留**「图表数据汇总」标题及其文字版分布/走势数据；图片本身即为图表的唯一展示形式。
    - 仅当 PNG 生成失败或插入全部失败时，才允许在文档中回退为文字汇总，并明确告知用户「图表转 PNG 失败，当前以文字汇总展示」。
@@ -590,6 +591,17 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
    **Step 5 — 清理 standalone 段落：**
    用 `dws doc block delete --block-id <standalone_id>` 删除 Step 1 产生的临时图片段落。**proxy URL 在 standalone 段落删除后仍然有效**（它们指向 OSS 永久资源），表格内的图片不会受影响。
 
+   **⚠️ 代码级强制校验（禁止跳过）：** `report_generator.py` 内置了以下校验函数，执行日报生成流程时**必须逐步调用**，任一校验不通过则中止流程并修复问题后再继续：
+
+   | 步骤 | 调用 | 作用 |
+   |------|------|------|
+   | 截图完成后 | `validate_chart_screenshots(result_json)` | 确认 `--charts` 输出了预期的 canvas PNG，缺少任一项则报错 |
+   | 生成 jsonml 前 | `validate_image_srcs(image_srcs, data)` | 确认每张图的 URL 是 proxy URL（非 OSS URL、非空），不通过则**禁止继续** |
+   | 生成 jsonml 后 | `generate_daily_report_jsonml(data, image_srcs)` 内置 `validate_jsonml_integrity` | jsonml 结构不合规时直接抛 `ValueError`，禁止捕获后忽略 |
+   | 写入文档时 | `build_dws_update_command(jsonml_path, doc_id)` | 自动生成含 `--no-fix-jsonml` 的命令，**禁止手写 dws 命令**（防止漏掉 flag） |
+
+   上述校验函数会在 stderr 打印 `⚠️ [validate_*]` 前缀的警告；若看到这些警告，**必须回溯修复对应步骤**而非忽略。
+
    **验证：** 在**新的浏览器 tab** 中打开文档确认图片渲染成功（`data-status="success"`）。注意：同一 tab 在多次 block 操作后渲染器可能卡住（`data-status` 永远停留在 `"loading"`），这是渲染器 bug 而非 URL 问题，打开新 tab 即可确认。
 4. **插入语雀文档**：
    - 通过语雀文档编辑器或对应 API 将需要渲染的 PNG 上传到文档附件，并插入到「■ 缺陷情况」表格的「汇总」单元格内容最下方，顺序同样为「业务模块分布」→「开发责任人分布」→「每日缺陷走势」（仅渲染时才插入）。
@@ -601,10 +613,13 @@ new 与 later 均只保留一行，不再额外设置汇总分析行；所有分
 
 #### 代码结构说明（参考实现）
 
-本 Skill 的日报生成参考实现由以下两个核心文件组成：
+本 Skill 的日报生成参考实现由以下三个核心文件组成：
 
 - `assets/report-template.html`：权威 HTML 版式模板，定义 5 列表格、蓝色横幅与单元格合并结构。
 - `report_generator.py`：读取模板并按本规范填充内容的 Python 参考实现。同时提供 HTML 渲染（`render_html`）与钉钉 jsonml 渲染（`render_jsonml` / `generate_daily_report_jsonml`）两条路径，共享同一份 `data` 字典以确保两种输出格式的内容严格一致。
+- `assets/screenshot_report.js`：基于 puppeteer-core 的截图工具，支持两种模式：
+  - **全页截图**（默认）：`node screenshot_report.js <html> <output.png> [--scale 3]`，用于聊天发图，默认 `deviceScaleFactor=3`。
+  - **逐图表截图**（`--charts`）：`node screenshot_report.js <html> <output-dir> --charts [--scale 4]`，用于钉钉文档插图，对每个 `<canvas>` 单独截图，默认 `deviceScaleFactor=4`。
 
 ##### 模板占位符
 

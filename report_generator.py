@@ -270,9 +270,10 @@ def _parse_daily_bug_counts(data: dict[str, Any]) -> list[tuple[str, int]]:
                 parsed.append((label, int(count)))
         return sorted(parsed, key=lambda x: x[0])
 
-    # 兜底：按 bug 的 created_date 聚合
+    # 兜底：按 bug 的 created_date 聚合（优先 all_bugs，兜底 new + later）
+    all_bugs = data.get("all_bugs") or (data.get("new_bugs", []) + data.get("later_bugs", []))
     counts: dict[str, int] = {}
-    for bug in data.get("new_bugs", []) + data.get("later_bugs", []):
+    for bug in all_bugs:
         date_str = bug.get("created_date", "")
         if date_str:
             label = date_str[5:] if len(date_str) >= 10 else date_str
@@ -596,11 +597,11 @@ def build_progress_brief(data: dict[str, Any]) -> str:
 
     # 测试执行进度标绿色（metric-success）；缺陷总数仅在此处描述一次，后续不再重复
     lines = [
-        f'测试执行进度：<span class="metric-success">{executed_cases}/{total_cases}</span>，缺陷总数：{total_defects}'
+        f'测试执行进度：<span class="metric-success">{exec_rate:.1f}%</span>，缺陷总数：{total_defects}'
     ]
 
     # 共执行用例数标绿色（metric-success）
-    parts = [f'今日共执行 <span class="metric-success">{executed_cases}/{total_cases}</span> 条用例']
+    parts = [f'今日共执行 <span class="metric-success">{exec_rate:.1f}%</span> 用例']
     if failed_cases:
         parts.append(f"失败 {failed_cases} 条")
     else:
@@ -674,7 +675,7 @@ def _build_test_progress_text(data: dict[str, Any]) -> str:
             base = ""
         else:
             rate = executed / total * 100
-            rate_span = f'<span class="metric-success">{executed}/{total}</span>'
+            rate_span = f'<span class="metric-success">{rate:.1f}%</span>'
             base = f"测试执行进度：{rate_span}，失败用例：{failed}"
 
     if base and notes:
@@ -1044,15 +1045,15 @@ def _j_brief_paragraphs(data: dict[str, Any]) -> list[list]:
     # Line 1
     line1: list[list] = [
         _j_leaf("测试执行进度："),
-        _j_leaf(f"{executed_cases}/{total_cases}", color=green),
+        _j_leaf(f"{exec_rate:.1f}%", color=green),
         _j_leaf(f"，缺陷总数：{total_defects}"),
     ]
 
     # Line 2
     line2: list[list] = [
         _j_leaf("今日共执行 "),
-        _j_leaf(f"{executed_cases}/{total_cases}", color=green),
-        _j_leaf(" 条用例"),
+        _j_leaf(f"{exec_rate:.1f}%", color=green),
+        _j_leaf(" 用例"),
     ]
     if failed_cases:
         line2.append(_j_leaf(f"，失败 {failed_cases} 条"))
@@ -1139,7 +1140,7 @@ def _j_progress_paragraphs(data: dict[str, Any]) -> list[list]:
             rate = executed / total * 100
             base_spans = [
                 _j_leaf("测试执行进度："),
-                _j_leaf(f"{executed}/{total}", color=green),
+                _j_leaf(f"{rate:.1f}%", color=green),
                 _j_leaf(f"，失败用例：{failed}"),
             ]
 
@@ -1433,6 +1434,173 @@ def render_jsonml(data: dict[str, Any], image_srcs: dict[str, str] | None = None
     ]
 
 
+# ── 工作流强制校验（防止跳步） ────────────────────────────────────
+
+_PROXY_URL_PREFIX = "/core/api/resources/img/"
+_OSS_URL_MARKER = "aliyuncs.com"
+
+
+def validate_image_srcs(
+    image_srcs: dict[str, str] | None,
+    data: dict[str, Any],
+) -> list[str]:
+    """校验 image_srcs 是否满足钉钉文档插图要求。
+
+    检查项：
+    1. 应该渲染图表的维度必须有对应的 proxy URL（不能为空或缺失）
+    2. URL 必须是钉钉内部 proxy URL（/core/api/resources/img/...）
+    3. URL 不能是 OSS URL（含 aliyuncs.com）
+
+    Returns:
+        errors: list[str] — 空列表表示通过；非空则每项为一条错误描述。
+    """
+    errors: list[str] = []
+    if image_srcs is None:
+        image_srcs = {}
+
+    # 判断哪些维度应该渲染图表
+    all_bugs = data.get("all_bugs") or (data.get("new_bugs", []) + data.get("later_bugs", []))
+    total_defect_count = data.get("total_defect_count", len(all_bugs))
+    module_counts = _count_by(all_bugs, "module", "未归类")
+    developer_counts = _count_by(all_bugs, "developer", "未分配")
+    test_duration_days = data.get("test_duration_days", 0)
+    daily_counts = _parse_daily_bug_counts(data)
+
+    expected_keys: list[str] = []
+    if total_defect_count > 5 and len(module_counts) > 3:
+        expected_keys.append("module")
+    if total_defect_count > 5 and len(developer_counts) > 3:
+        expected_keys.append("developer")
+    if test_duration_days > 5 and total_defect_count > 5 and daily_counts:
+        expected_keys.append("trend")
+
+    for key in expected_keys:
+        src = image_srcs.get(key, "")
+        if not src:
+            errors.append(
+                f"[validate_image_srcs] 图表 '{key}' 应渲染但 image_srcs 中缺少对应 proxy URL。"
+                f"请先用 `screenshot_report.js --charts` 截图，再 `dws doc media insert` 上传，"
+                f"最后 `dws doc block list --content-format jsonml` 提取 proxy URL。"
+            )
+        elif _OSS_URL_MARKER in src:
+            errors.append(
+                f"[validate_image_srcs] 图表 '{key}' 的 URL 是 OSS URL（{src[:60]}...），"
+                f"在表格单元格内无法渲染。必须通过 `dws doc block list --content-format jsonml` "
+                f"提取 proxy URL（以 {_PROXY_URL_PREFIX} 开头）。"
+            )
+        elif not src.startswith(_PROXY_URL_PREFIX):
+            errors.append(
+                f"[validate_image_srcs] 图表 '{key}' 的 URL 不是 proxy URL（{src[:60]}...）。"
+                f"必须以 {_PROXY_URL_PREFIX} 开头。"
+            )
+
+    return errors
+
+
+def validate_jsonml_integrity(jsonml: list) -> list[str]:
+    """校验 jsonml 结构是否满足钉钉文档写入要求。
+
+    检查项：
+    1. 根节点为 ["root", {}, table]
+    2. table 有 colsWidth 属性
+    3. 所有 img 节点有 uuid、width，无 height
+    4. img src 不是 OSS URL
+    5. img 后有尾随空 span
+    """
+    errors: list[str] = []
+
+    if not isinstance(jsonml, list) or len(jsonml) < 3 or jsonml[0] != "root":
+        errors.append("[validate_jsonml_integrity] jsonml 根节点必须是 ['root', {}, table]。")
+        return errors
+
+    table = jsonml[2] if len(jsonml) > 2 else None
+    if not isinstance(table, list) or not table or table[0] != "table":
+        errors.append("[validate_jsonml_integrity] jsonml[2] 必须是 table 节点。")
+        return errors
+
+    table_attrs = table[1] if isinstance(table[1], dict) else {}
+    if "colsWidth" not in table_attrs:
+        errors.append("[validate_jsonml_integrity] table 节点缺少 colsWidth 属性。")
+
+    # 递归检查 img 节点
+    def _check(node: Any, path: str = "root") -> None:
+        if not isinstance(node, list) or len(node) < 2:
+            return
+        tag = node[0]
+        if tag == "img":
+            attrs = node[1] if isinstance(node[1], dict) else {}
+            if "uuid" not in attrs:
+                errors.append(f"[validate_jsonml_integrity] {path} img 缺少 uuid。")
+            if "width" not in attrs:
+                errors.append(f"[validate_jsonml_integrity] {path} img 缺少 width。")
+            if "height" in attrs:
+                errors.append(f"[validate_jsonml_integrity] {path} img 不应有 height（钉钉自动计算宽高比）。")
+            src = attrs.get("src", "")
+            if _OSS_URL_MARKER in src:
+                errors.append(f"[validate_jsonml_integrity] {path} img src 是 OSS URL，表格内不可用。")
+        for i, child in enumerate(node[2:], start=2):
+            _check(child, f"{path}[{i}]")
+
+    _check(jsonml)
+    return errors
+
+
+def validate_chart_screenshots(
+    result_json: dict[str, Any],
+    expected_keys: list[str] | None = None,
+) -> list[str]:
+    """校验 screenshot_report.js --charts 的输出结果。
+
+    Args:
+        result_json: 脚本输出的 JSON（含 charts 数组）
+        expected_keys: 预期应生成的图表 key 列表（如 ["module", "developer", "trend"]）。
+                       为 None 时只检查 charts 非空。
+
+    Returns:
+        errors: list[str]
+    """
+    errors: list[str] = []
+
+    if not result_json.get("success"):
+        errors.append("[validate_chart_screenshots] 截图脚本未返回 success=true。")
+        return errors
+
+    charts = result_json.get("charts", [])
+    if not charts:
+        errors.append("[validate_chart_screenshots] 截图脚本未生成任何图表 PNG。")
+        return errors
+
+    if expected_keys is not None:
+        canvas_map = {
+            "module": "moduleChart",
+            "developer": "developerChart",
+            "trend": "trendChart",
+        }
+        generated_ids = {c.get("canvasId") for c in charts}
+        for key in expected_keys:
+            cid = canvas_map.get(key)
+            if cid and cid not in generated_ids:
+                errors.append(
+                    f"[validate_chart_screenshots] 预期生成 '{key}' 图表（canvas #{cid}），"
+                    f"但截图输出中未找到。请检查 HTML 中是否包含该 canvas。"
+                )
+
+    return errors
+
+
+def build_dws_update_command(jsonml_path: str, doc_id: str) -> str:
+    """生成 dws doc update 命令，强制包含 --no-fix-jsonml。
+
+    返回的命令字符串可直接在 shell 中执行。--no-fix-jsonml 是必须的，
+    因为 --fix-jsonml 会静默丢弃 tc 内的 img 标签。
+    """
+    return (
+        f"dws doc update --node {doc_id} "
+        f"--mode overwrite --content-format jsonml "
+        f"--no-fix-jsonml --content-file {jsonml_path}"
+    )
+
+
 def generate_daily_report_jsonml(
     data: dict[str, Any], image_srcs: dict[str, str] | None = None
 ) -> list:
@@ -1440,10 +1608,30 @@ def generate_daily_report_jsonml(
 
     Post-processing: _enrich_img_nodes ensures all img nodes have uuid, width,
     and trailing span — required for DingTalk table cell image rendering.
+
+    内置校验：生成后自动调用 validate_jsonml_integrity，不通过时抛出 ValueError。
+    调用方应在生成前额外调用 validate_image_srcs(data, image_srcs) 确保图片 URL 合规。
     """
     table = render_jsonml(data, image_srcs)
     table = _enrich_img_nodes(table)
-    return ["root", {}, table]
+    result = ["root", {}, table]
+
+    # 内置校验：jsonml 结构完整性
+    integrity_errors = validate_jsonml_integrity(result)
+    if integrity_errors:
+        raise ValueError(
+            "jsonml 完整性校验失败，请勿跳过任何步骤：\n"
+            + "\n".join(integrity_errors)
+        )
+
+    # 警告：image_srcs 合规性（不阻塞生成，但打印警告）
+    img_errors = validate_image_srcs(image_srcs, data)
+    if img_errors:
+        import sys
+        for err in img_errors:
+            print(f"⚠️  {err}", file=sys.stderr)
+
+    return result
 
 
 def generate_daily_report(data: dict[str, Any], config: dict[str, Any] | None = None) -> str:
@@ -1508,18 +1696,16 @@ def sync_from_dingtalk_doc(
         changes.append(f"当日新增缺陷数: {data.get('today_bug_count')} → {v}")
         data["today_bug_count"] = v
 
-    # ── 5. 测试执行进度 (executed/total) ───────────────────────
-    m = re.search(r'测试执行进度[^\d]*(\d+)/(\d+)', md)
+    # ── 5. 测试执行进度 (百分比) ──────────────────────────────
+    m = re.search(r'测试执行进度[：:]?\s*([\d.]+)%', md)
     if m:
-        executed, total_cases = int(m.group(1)), int(m.group(2))
-        if executed != data.get("executed_cases") or total_cases != data.get("total_cases"):
+        pct = float(m.group(1))
+        new_rate = pct / 100.0
+        if abs(new_rate - data.get("execution_rate", 0.0)) > 0.001:
             changes.append(
-                f"执行进度: {data.get('executed_cases')}/{data.get('total_cases')} → {executed}/{total_cases}"
+                f"执行进度: {data.get('execution_rate', 0.0) * 100:.1f}% → {pct:.1f}%"
             )
-            data["executed_cases"] = executed
-            data["total_cases"] = total_cases
-            if total_cases > 0:
-                data["execution_rate"] = executed / total_cases
+            data["execution_rate"] = new_rate
 
     # ── 6. 风险等级 ────────────────────────────────────────────
     risk_map = {"无": "无", "低": "低", "中": "中", "高": "高"}
@@ -1615,11 +1801,11 @@ def verify_report_consistency(
         if val_str not in dws_markdown:
             issues.append(f"[钉钉] {label}={val_str} 未出现")
 
-    # ── 2. 测试执行进度格式 executed/total ─────────────────────
-    executed = data.get("executed_cases", 0)
+    # ── 2. 测试执行进度格式（百分比） ────────────────────────
+    exec_rate = data.get("execution_rate", 0.0) * 100
     total = data.get("total_cases", 0)
     if total > 0:
-        progress_str = f"{executed}/{total}"
+        progress_str = f"{exec_rate:.1f}%"
         checked += 1
         if progress_str not in html:
             issues.append(f"[HTML] 测试执行进度 {progress_str} 未出现")
