@@ -1,0 +1,5 @@
+{
+  "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=4c1cc3f9a4f04c8b899478571b687e653a4beddf3f2665e7447d8af3090f076d",
+  "enabled": true,
+  "title_prefix": "测试日报"
+}

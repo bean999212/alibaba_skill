@@ -1,0 +1,49 @@
+{
+  "groups": [
+    {
+      "group_id": "ea3ecbd6",
+      "group_name": "悄悄进步小群",
+      "project": "集运PC改版",
+      "aone_id": "2164247",
+      "operator_staffId": "526249",
+      "operator_name": "小锣",
+      "operator_chatId": "37bc4847-7870-4b55-ba12-7146daf05982",
+      "group_chatId": "ea3ecbd6-7e97-4ed7-83e3-ed4722c166e1",
+      "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=4c1cc3f9a4f04c8b899478571b687e653a4beddf3f2665e7447d8af3090f076d",
+      "schedule_time": "19:00",
+      "enabled": true,
+      "learned": {
+        "project": "集运PC改版",
+        "aone_id": "2164247",
+        "test_plan_ids": [38553, 38551, 38027],
+        "test_plan_names": ["PC端集运改版适配", "PC端集运改版适配_台湾", "PC端集运改版适配_香港"],
+        "learned_at": "2026-09-09T20:06:00+08:00"
+      }
+    },
+    {
+      "group_id": "cid3VyuIf",
+      "group_name": "集运改版PC版干活群",
+      "project": "集运PC改版",
+      "aone_id": "2164247",
+      "operator_staffId": "526249",
+      "operator_name": "小锣",
+      "operator_chatId": "37bc4847-7870-4b55-ba12-7146daf05982",
+      "group_chatId": "cid3VyuIfmDd2mQV86qHZv4LQ==",
+      "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=8e35d170860817503171e4591859075b009e7f2db16338de23f9ffd8d25d1837",
+      "schedule_time": "19:00",
+      "enabled": true,
+      "learned": {
+        "project": "集运PC改版",
+        "aone_id": "2164247",
+        "test_plan_ids": [38553, 38551, 38027],
+        "test_plan_names": ["PC端集运改版适配", "PC端集运改版适配_台湾", "PC端集运改版适配_香港"],
+        "learned_at": "2026-09-09T21:55:00+08:00"
+      }
+    }
+  ],
+  "defaults": {
+    "operator_staffId": "526249",
+    "operator_name": "小锣",
+    "schedule_time": "19:00"
+  }
+}

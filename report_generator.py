@@ -595,13 +595,10 @@ def build_progress_brief(data: dict[str, Any]) -> str:
     blocked_cases = data.get("blocked_cases", 0)
     new_bugs = data.get("new_bugs", [])
 
-    # 测试执行进度标绿色（metric-success）；缺陷总数仅在此处描述一次，后续不再重复
-    lines = [
-        f'测试执行进度：<span class="metric-success">{exec_rate:.1f}%</span>，缺陷总数：{total_defects}'
-    ]
+    # 第一点已删除（不再单独展示测试执行进度和缺陷总数）
 
-    # 共执行用例数标绿色（metric-success）
-    parts = [f'今日共执行 <span class="metric-success">{exec_rate:.1f}%</span> 用例']
+    # 共执行用例数用实际 case 数（已执行/总数）展示，标绿色（metric-success）
+    parts = [f'共执行 <span class="metric-success">{executed_cases}/{total_cases}</span> 用例']
     if failed_cases:
         parts.append(f"失败 {failed_cases} 条")
     else:
@@ -620,14 +617,13 @@ def build_progress_brief(data: dict[str, Any]) -> str:
     if data.get("new_bug_focus"):
         analysis += f"新增缺陷主要涉及{data['new_bug_focus']}。"
 
-    # 总结句不再重复测试执行进度与缺陷总数（已在首行描述），仅陈述 P0/P1 缺陷情况
+    # 总结句：仅陈述 P0/P1 缺陷情况
     unclosed_p0_p1 = data.get("unclosed_p0_p1", 0)
     if unclosed_p0_p1:
         summary = f"未关闭 P0/P1 缺陷 {unclosed_p0_p1} 个。"
     else:
         summary = "无未关闭 P0/P1 缺陷。"
-    lines.append(analysis)
-    lines.append(summary)
+    lines = [analysis, summary]
     return "\n".join(lines)
 
 
@@ -1042,17 +1038,12 @@ def _j_brief_paragraphs(data: dict[str, Any]) -> list[list]:
     new_bugs = data.get("new_bugs", [])
     green = "#52c41a"
 
-    # Line 1
-    line1: list[list] = [
-        _j_leaf("测试执行进度："),
-        _j_leaf(f"{exec_rate:.1f}%", color=green),
-        _j_leaf(f"，缺陷总数：{total_defects}"),
-    ]
+    # Line 1 removed (不再单独展示测试执行进度和缺陷总数)
 
-    # Line 2
+    # Line 2: 共执行用例数用实际 case 数（已执行/总数）展示
     line2: list[list] = [
-        _j_leaf("今日共执行 "),
-        _j_leaf(f"{exec_rate:.1f}%", color=green),
+        _j_leaf("共执行 "),
+        _j_leaf(f"{executed_cases}/{total_cases}", color=green),
         _j_leaf(" 用例"),
     ]
     if failed_cases:
@@ -1083,9 +1074,8 @@ def _j_brief_paragraphs(data: dict[str, Any]) -> list[list]:
 
     list_attr: dict[str, Any] = {"listId": "brief-list", "level": 0, "isOrdered": True}
     return [
-        _j_para(*line1, list_attrs={**list_attr, "start": 1}),
-        _j_para(*line2, list_attrs={**list_attr, "start": 2}),
-        _j_para(*line3, list_attrs={**list_attr, "start": 3}),
+        _j_para(*line2, list_attrs={**list_attr, "start": 1}),
+        _j_para(*line3, list_attrs={**list_attr, "start": 2}),
     ]
 
 
@@ -1601,6 +1591,108 @@ def build_dws_update_command(jsonml_path: str, doc_id: str) -> str:
     )
 
 
+# ── 类型推断关键词表（与 SKILL.md 第 267-271 行对齐） ─────────────
+_TYPE_KEYWORD_MAP: dict[str, list[str]] = {
+    "UI 缺陷": [
+        "样式", "文案", "字体", "展示", "显示", "提示", "toast",
+        "图标", "颜色", "布局", "对齐", "错位", "乱码", "小数", "符号",
+        "白屏", "闪屏", "截断", "溢出", "重叠",
+    ],
+    "性能问题": [
+        "超时", "白屏", "加载慢", "卡顿", "性能", "并发", "竞争", "慢",
+    ],
+    "配置问题": [
+        "配置", "开关", "参数", "shield", "Switch", "环境变量",
+    ],
+}
+
+
+def _infer_defect_type(title: str) -> str:
+    """根据缺陷标题关键词推断子类型（SKILL.md 第 267-271 行）。"""
+    title_lower = title.lower()
+    for defect_type, keywords in _TYPE_KEYWORD_MAP.items():
+        if any(kw in title_lower for kw in keywords):
+            return defect_type
+    return "功能缺陷"
+
+
+def validate_workflow_completeness(
+    data: dict[str, Any],
+) -> list[str]:
+    """校验日报生成前的工作流完整性，防止跳步。
+
+    必须在 generate_daily_report() / generate_daily_report_jsonml() 之前调用。
+    任一校验不通过时，调用方应中止流程并修复后重试。
+
+    检查项（对应 SKILL.md 执行流程）：
+    1. 缺陷类型推断（第 4 步，lines 267-271）：coop API 返回 type="Bug"，
+       必须根据标题关键词推断子类型并回填。若所有缺陷 type 仍为 "Bug" 则报错。
+    2. 智能模块推断（第 4 步，lines 275-280）：若 >50% 缺陷 module 为空/"未归类"，
+       应根据标题智能分类并回填。
+    3. 必填数据字段：检查关键聚合字段是否存在。
+    4. 风险评估已完成：risk_level 必须存在。
+
+    Returns:
+        errors: list[str] — 空列表表示全部通过。
+    """
+    errors: list[str] = []
+    all_bugs = data.get("all_bugs") or (data.get("new_bugs", []) + data.get("later_bugs", []))
+
+    if not all_bugs:
+        errors.append(
+            "[validate_workflow_completeness] all_bugs / new_bugs+later_bugs 为空，"
+            "请确认第 4 步「拉取数据」是否完成。"
+        )
+        return errors
+
+    # ── 1. 缺陷类型推断检查 ──────────────────────────────────────
+    raw_type_count = sum(1 for b in all_bugs if b.get("type", "") in ("Bug", ""))
+    if raw_type_count == len(all_bugs):
+        errors.append(
+            f"[validate_workflow_completeness] 全部 {len(all_bugs)} 条缺陷的 type 仍为 'Bug' 或空，"
+            f"说明第 4 步「缺陷类型推断」被跳过。"
+            f"必须根据标题关键词推断子类型（UI 缺陷/性能问题/配置问题/功能缺陷）并回填 type 字段。"
+        )
+    elif raw_type_count > len(all_bugs) * 0.5:
+        errors.append(
+            f"[validate_workflow_completeness] {raw_type_count}/{len(all_bugs)} 条缺陷的 type 仍为 'Bug'，"
+            f"超过半数未推断。请检查类型推断逻辑是否执行。"
+        )
+
+    # ── 2. 智能模块推断检查 ──────────────────────────────────────
+    uncategorized = sum(
+        1 for b in all_bugs
+        if not b.get("module") or b.get("module") == "未归类"
+    )
+    if uncategorized > len(all_bugs) * 0.5 and len(all_bugs) >= 3:
+        errors.append(
+            f"[validate_workflow_completeness] {uncategorized}/{len(all_bugs)} 条缺陷（>50%）的 module 为空或'未归类'，"
+            f"说明第 4 步「智能模块推断」被跳过。"
+            f"必须根据缺陷标题/描述智能分类为业务模块（如站点、功能域）并回填 module 字段。"
+        )
+
+    # ── 3. 必填数据字段检查 ──────────────────────────────────────
+    required_fields = [
+        "project_name",
+        "total_defect_count",
+    ]
+    for field in required_fields:
+        if field not in data or data[field] is None:
+            errors.append(
+                f"[validate_workflow_completeness] 必填字段 '{field}' 缺失，"
+                f"请确认数据拉取步骤是否完成。"
+            )
+
+    # ── 4. 风险评估检查 ──────────────────────────────────────────
+    if "risk_level" not in data:
+        errors.append(
+            "[validate_workflow_completeness] risk_level 不存在，"
+            "说明第 5 步「计算风险」被跳过。请调用 evaluate_risk() 并合并结果到 data。"
+        )
+
+    return errors
+
+
 def generate_daily_report_jsonml(
     data: dict[str, Any], image_srcs: dict[str, str] | None = None
 ) -> list:
@@ -1609,9 +1701,18 @@ def generate_daily_report_jsonml(
     Post-processing: _enrich_img_nodes ensures all img nodes have uuid, width,
     and trailing span — required for DingTalk table cell image rendering.
 
-    内置校验：生成后自动调用 validate_jsonml_integrity，不通过时抛出 ValueError。
+    内置校验：生成前自动调用 validate_workflow_completeness + validate_jsonml_integrity，
+    生成后自动调用 validate_jsonml_integrity，不通过时抛出 ValueError。
     调用方应在生成前额外调用 validate_image_srcs(data, image_srcs) 确保图片 URL 合规。
     """
+    # 前置校验：工作流完整性
+    wf_errors = validate_workflow_completeness(data)
+    if wf_errors:
+        raise ValueError(
+            "工作流完整性校验失败，以下步骤被跳过：\n"
+            + "\n".join(wf_errors)
+        )
+
     table = render_jsonml(data, image_srcs)
     table = _enrich_img_nodes(table)
     result = ["root", {}, table]
@@ -1635,7 +1736,17 @@ def generate_daily_report_jsonml(
 
 
 def generate_daily_report(data: dict[str, Any], config: dict[str, Any] | None = None) -> str:
-    """生成日报 HTML。"""
+    """生成日报 HTML。
+
+    内置校验：生成前自动调用 validate_workflow_completeness，
+    工作流不完整时抛出 ValueError，防止跳步生成出不合格的报告。
+    """
+    wf_errors = validate_workflow_completeness(data)
+    if wf_errors:
+        raise ValueError(
+            "工作流完整性校验失败，以下步骤被跳过：\n"
+            + "\n".join(wf_errors)
+        )
     template_html = TEMPLATE_PATH.read_text(encoding="utf-8")
     return render_html(template_html, data)
 
